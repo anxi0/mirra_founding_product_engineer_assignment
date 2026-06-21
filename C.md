@@ -233,11 +233,23 @@ PostHog 연결은 B.md Day 3에 해당한다. `content_performance_map.agent_que
 
 ## AI 사용 회고
 
+### 사용한 AI 도구 및 워크플로우
+
+이 PoC는 Claude Code + gstack(Superpower) 플러그인을 단계별로 활용했다. 사용 순서는 다음과 같다.
+
+| 단계 | 플러그인 | 역할 |
+|------|----------|------|
+| 1 | **Office Hour** | 플라이휠 문제 정의, 3가지 PoC 후보(백필/Agent/PostHog) 중 범위 결정. 10~20분 대화로 "content_performance_map 백필 + 분석 루프"로 범위 확정 |
+| 2 | **브레인스토밍 스킬** | 스키마 설계 초안 생성. "4-hop 단절을 단일 테이블로 해결하려면 어떤 컬럼이 필요한가"를 빠르게 발산 후 역정규화 여부 결정 |
+| 3 | **writing-plans 스킬** | A.md / B.md / C.md 단계별 계획 수립. 각 파트의 논리 구조와 작성 순서를 명세화 |
+| 4 | **Git Worktrees** | 작업 공간 분리. poc/ 디렉토리를 별도 컨텍스트로 격리해 문서 작업과 코드 작업 충돌 방지 |
+| 5 | **Sub-Agent Dev** | 컨텍스트 분리 개발. 스키마 작성, 백필 쿼리, API 라우트, 대시보드 UI를 독립 에이전트로 병렬 구현 |
+
 ### AI를 사용한 부분
 
-- **스키마 설계 초안**: "4-hop 단절을 단일 테이블로 해결하려면 어떤 컬럼이 필요한가" 브레인스토밍에 Claude를 사용했다. 역정규화 여부(`idea_source_type`을 별도 JOIN vs 스냅샷)는 Claude가 제안한 두 가지 방향을 모두 검토한 후 내가 결정했다.
-- **분석 쿼리 작성**: 루프 1~3의 SQL 초안을 Claude와 함께 작성했다. GROUP BY 순서와 COALESCE 처리는 실행 후 결과를 보고 수정했다.
-- **보일러플레이트 생성**: Drizzle schema 파일, bun:sqlite 초기화, TypeScript 타입 선언 등 반복적인 코드는 AI로 빠르게 생성했다.
+- **스키마 설계 초안**: 브레인스토밍 스킬로 역정규화 여부(`idea_source_type`을 별도 JOIN vs 스냅샷) 두 방향을 빠르게 발산했다. 최종 결정은 내가 했다.
+- **분석 쿼리 작성**: 루프 1~3의 SQL 초안을 Sub-Agent Dev와 함께 작성했다. GROUP BY 순서와 COALESCE 처리는 실행 후 결과를 보고 수정했다.
+- **보일러플레이트 생성**: Drizzle schema 파일, DB 초기화, TypeScript 타입 선언 등 반복적인 코드는 Sub-Agent Dev로 빠르게 생성했다.
 
 ### AI를 믿지 않고 직접 검증한 부분
 
