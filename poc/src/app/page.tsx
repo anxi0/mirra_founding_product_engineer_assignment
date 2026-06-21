@@ -154,7 +154,6 @@ export default function Dashboard() {
         <div className="flex gap-2">
           <input
             className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-            style={{ color: "#000", caretColor: "#000" }}
             placeholder="예) 인스타그램에 이번주 카드뉴스 만들어줘"
             value={queryInput}
             onChange={e => setQueryInput(e.target.value)}
