@@ -3,7 +3,10 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import path from "path";
 import * as schema from "./schema";
 
-const DB_PATH = path.join(process.cwd(), "flywheel.db");
+// Vercel: /tmp만 쓰기 가능. PoC이므로 cold start 시 초기화(시드 버튼으로 재복구) 허용
+const DB_PATH = process.env.NODE_ENV === "production"
+  ? "/tmp/flywheel.db"
+  : path.join(process.cwd(), "flywheel.db");
 
 // Next.js dev 환경에서 핫 리로드 시 연결이 중복 생성되는 것을 방지
 const globalForDb = global as unknown as { db: ReturnType<typeof drizzle> };
