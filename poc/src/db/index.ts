@@ -1,11 +1,21 @@
-import { Database } from "bun:sqlite";
-import { drizzle } from "drizzle-orm/bun-sqlite";
-import * as schema from "./schema.ts";
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import path from "path";
+import * as schema from "./schema";
 
-const sqlite = new Database("flywheel.db");
-export const db = drizzle(sqlite, { schema });
+const DB_PATH = path.join(process.cwd(), "flywheel.db");
 
-export function initTables() {
+// Next.js dev 환경에서 핫 리로드 시 연결이 중복 생성되는 것을 방지
+const globalForDb = global as unknown as { db: ReturnType<typeof drizzle> };
+
+function createDb() {
+  const sqlite = new Database(DB_PATH);
+  sqlite.pragma("journal_mode = WAL");
+  initTables(sqlite);
+  return drizzle(sqlite, { schema });
+}
+
+function initTables(sqlite: Database.Database) {
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS content_ideas (
       id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, platform TEXT NOT NULL,
@@ -47,3 +57,6 @@ export function initTables() {
     );
   `);
 }
+
+export const db = globalForDb.db ?? createDb();
+if (process.env.NODE_ENV !== "production") globalForDb.db = db;
