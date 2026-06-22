@@ -1,4 +1,4 @@
-export type Platform = "instagram" | "tiktok" | "kakao";
+export type Platform = "instagram" | "tiktok" | "youtube" | "threads";
 
 export type OnboardingEventName =
   | "survey_completed"

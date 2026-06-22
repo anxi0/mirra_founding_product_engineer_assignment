@@ -30,13 +30,15 @@ const SURVEY_OPTIONS: { id: SurveyChoice; label: string; sub: string; emoji: str
 const PLATFORMS: { id: Platform; label: string; emoji: string; color: string }[] = [
   { id: "instagram", label: "인스타그램", emoji: "📸", color: "from-purple-500 to-pink-500" },
   { id: "tiktok",    label: "틱톡",       emoji: "🎵", color: "from-gray-900 to-gray-700" },
-  { id: "kakao",     label: "카카오채널",  emoji: "💬", color: "from-yellow-400 to-yellow-300" },
+  { id: "youtube",   label: "유튜브",     emoji: "▶️", color: "from-red-600 to-red-500" },
+  { id: "threads",   label: "쓰레드",     emoji: "🧵", color: "from-gray-800 to-gray-600" },
 ];
 
 const PLATFORM_LABEL: Record<Platform, string> = {
   instagram: "인스타그램",
   tiktok: "틱톡",
-  kakao: "카카오채널",
+  youtube: "유튜브",
+  threads: "쓰레드",
 };
 
 // ── Supabase 이벤트 헬퍼 ─────────────────────────────────────────────────────
