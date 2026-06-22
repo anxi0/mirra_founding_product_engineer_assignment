@@ -130,6 +130,46 @@ HOOTL (Human-out-of-the-Loop) — 완전 자동화
 
 셋째, **요금제·결제 액션**입니다. 크레딧 자동 충전, 플랜 업그레이드 등 돈이 오가는 액션은 항상 사용자 명시적 승인이 필요합니다. 돈을 받는 서비스에서 결제 자동화는 신뢰의 문제입니다.
 
+### 페르소나: Agent의 장기 메모리
+
+현재 Mirra는 콘텐츠를 단건 단위로 생성합니다. 매번 새 콘텐츠를 만들 때 브랜드 톤, 자주 쓰는 해시태그, 타겟 고객, 선호 포맷을 다시 입력하거나 AI가 추론해야 합니다. 이전에 잘 됐던 콘텐츠의 스타일을 다음 콘텐츠에 자동으로 반영하는 메커니즘이 없습니다.
+
+Agent-first 설계에서 페르소나는 단순한 프로필 설정이 아닙니다. Agent가 모든 생성 요청에 참조하는 브랜드 컨텍스트 레이어이며, 성과 데이터로 지속적으로 갱신되는 살아있는 문서입니다.
+
+```
+[단건 중심 — 현재]
+"카드뉴스 만들어줘" → 매번 새로 추론 → 일관성 없음
+
+[페르소나 기반 — 제안]
+"카드뉴스 만들어줘"
+  → Agent: 페르소나 참조 (톤: 친근하고 따뜻함 / 주 고객: 30대 여성 / 잘 됐던 포맷: 세로형 6장)
+  → 브랜드에 맞는 초안 즉시 생성
+  → 성과 데이터 피드백 → 페르소나 자동 보강
+```
+
+**페르소나가 담아야 할 것:**
+
+- 브랜드 톤·보이스: 공식적/친근함/유머러스 등 문체 방향
+- 타겟 고객: 연령대, 관심사, 주로 활동하는 시간대
+- 채널별 선호 포맷: 인스타그램에서는 세로형 카드뉴스 6장, 틱톡에서는 15초 이하 숏폼
+- 브랜드 키워드·해시태그: 매 콘텐츠에 반복 사용하는 용어
+- 금지 요소: 쓰지 않는 단어, 피해야 할 소재
+- 성과 기반 학습: 참여율이 높았던 콘텐츠 패턴 자동 누적
+
+**계정 단위로 관리해야 하는 이유:**
+
+소상공인은 인스타그램, 카카오채널, 틱톡을 각각 다른 톤으로 운영합니다. 인스타그램은 감성적인 이미지 중심, 카카오채널은 정보 전달 중심, 틱톡은 트렌드 반응형. 페르소나를 워크스페이스 단위가 아닌 **SNS 계정 단위**로 관리해야 이 차이를 반영할 수 있습니다.
+
+에이전시 플랜 사용자는 여러 브랜드 계정을 동시에 관리합니다. 계정별 페르소나가 명확히 분리되지 않으면 A 브랜드의 톤이 B 브랜드 콘텐츠에 섞이는 문제가 생깁니다.
+
+**온보딩 전략:**
+
+페르소나를 처음부터 완벽하게 채우도록 강제하면 이탈률이 높아집니다. 두 단계로 나눕니다.
+
+첫째, 최초 연동 시 5가지 질문으로 최소 페르소나를 생성합니다. "어떤 업종인가요?", "주 고객은 누구인가요?", "원하는 톤은?" 등입니다. 이 답변으로 초기 페르소나를 구성하고 즉시 첫 콘텐츠 생성에 사용합니다.
+
+둘째, 콘텐츠가 쌓일수록 성과 데이터 기반으로 페르소나를 자동 보강합니다. 사용자가 직접 수정하지 않아도, "지난 30일간 참여율이 높았던 콘텐츠의 공통 패턴을 반영해 페르소나를 업데이트했습니다"라는 알림과 함께 Agent가 제안합니다.
+
 ### 채널별 워크스페이스 뷰 (전환 전략)
 
 Agent-first 전면 전환 전 중간 단계로, 현재 기능 단위 사이드바는 유지하면서 "채널 퍼스트" 뷰를 상단에 추가합니다. 인스타그램, 카카오채널 등 연동된 계정을 선택하면 해당 채널의 기획-제작-예약-성과를 하나의 뷰에서 추적할 수 있도록 합니다. 동시에 어느 뷰에서 실제 발행까지 도달하는지 클릭 이벤트를 로깅하면, 이후 어느 축으로 IA를 통합할지 결정하는 데이터가 모입니다.
@@ -257,6 +297,46 @@ CREATE TABLE generation_params (
 );
 
 CREATE INDEX ON generation_params (generation_id, generation_type);
+```
+
+#### `account_personas` (신규)
+
+SNS 계정 단위의 브랜드 페르소나를 저장합니다. Agent가 모든 콘텐츠 생성 요청에 이 테이블을 참조하며, 성과 루프가 돌 때마다 자동으로 갱신됩니다.
+
+```sql
+CREATE TABLE account_personas (
+  id                  uuid      PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id        uuid      NOT NULL REFERENCES workspaces(id),
+  social_account_id   uuid      NOT NULL REFERENCES social_accounts(id),
+
+  -- 브랜드 정체성
+  brand_name          varchar   NOT NULL,
+  industry            varchar,                        -- 'cafe' | 'fashion' | 'beauty' | ...
+  tone_keywords       text[],                         -- ['친근한', '따뜻한', '유머러스']
+  forbidden_keywords  text[],                         -- 쓰지 않는 단어·소재
+
+  -- 타겟 고객
+  target_age_range    varchar,                        -- '20-30'
+  target_interests    text[],
+
+  -- 채널별 선호 포맷 (플랫폼마다 다름)
+  preferred_format    varchar,                        -- 'carousel' | 'video' | 'text'
+  preferred_slide_count integer,                      -- 카드뉴스 기본 슬라이드 수
+  preferred_duration_sec integer,                     -- 영상 기본 길이
+
+  -- 성과 기반 학습 (자동 갱신)
+  top_performing_patterns  jsonb,                     -- 잘 됐던 콘텐츠 패턴 스냅샷
+  best_posting_hours       integer[],                 -- 참여율 높은 발행 시간대
+  effective_hashtags       text[],                    -- 실제로 도달에 기여한 해시태그
+
+  -- 메타
+  version             integer   DEFAULT 1,            -- 갱신 횟수
+  last_reinforced_at  timestamp,                      -- 마지막 성과 기반 갱신 시점
+  created_at          timestamp NOT NULL DEFAULT now(),
+  updated_at          timestamp NOT NULL DEFAULT now(),
+
+  UNIQUE (social_account_id)
+);
 ```
 
 #### `content_performance_map` (신규)
@@ -393,13 +473,60 @@ GROUP BY gp.generation_attempt, gp.user_edited
 ORDER BY avg_engagement DESC;
 ```
 
+**루프 4 — 성과 기반 페르소나 강화**
+
+```sql
+-- 지난 30일 성과 상위 20% 콘텐츠의 공통 패턴을 추출해 페르소나를 갱신한다
+WITH top_posts AS (
+  SELECT
+    cpm.*,
+    NTILE(5) OVER (
+      PARTITION BY cpm.workspace_id
+      ORDER BY cpm.engagement_rate DESC
+    ) AS engagement_quartile
+  FROM content_performance_map cpm
+  WHERE cpm.workspace_id = :workspace_id
+    AND cpm.published_at >= NOW() - INTERVAL '30 days'
+),
+patterns AS (
+  SELECT
+    cpm.social_account_id,
+    MODE() WITHIN GROUP (ORDER BY gp.generation_attempt) AS best_attempt_count,
+    ARRAY_AGG(DISTINCT EXTRACT(HOUR FROM cpm.published_at)) AS best_hours,
+    AVG(cpm.engagement_rate) AS top_avg_engagement
+  FROM top_posts cpm
+  JOIN generation_params gp
+    ON gp.generation_id = cpm.generation_id
+  WHERE cpm.engagement_quartile = 1  -- 상위 20%
+  GROUP BY cpm.social_account_id
+)
+UPDATE account_personas ap
+SET
+  best_posting_hours      = p.best_hours,
+  top_performing_patterns = jsonb_build_object(
+    'best_attempt_count', p.best_attempt_count,
+    'top_avg_engagement', p.top_avg_engagement,
+    'snapped_at', NOW()
+  ),
+  last_reinforced_at = NOW(),
+  version            = version + 1
+FROM patterns p
+WHERE ap.social_account_id = p.social_account_id;
+```
+
+이 루프가 주기적으로 실행되면 `account_personas`는 단순한 초기 설정을 넘어, 해당 계정에서 실제로 통한 패턴을 누적하는 장기 메모리가 됩니다. Agent가 다음 콘텐츠를 생성할 때 이 페르소나를 참조하면 "이 계정에서는 오후 7시 발행 + 재생성 1회 + 세로형 6장이 가장 잘 됐습니다"라는 근거 있는 제안이 가능해집니다.
+
 ---
 
 ### 플라이휠 루프 요약
 
 ```
+[0] 페르소나 초기화 (계정 연동 시 1회)
+    5가지 온보딩 질문 → account_personas 최소 프로필 생성
+
 [1] Agent 쿼리 적재
     사용자 발화 → agent_queries (인텐트 분류)
+    → account_personas 참조하여 브랜드 컨텍스트 주입
 
 [2] 생성 파라미터 저장
     생성 실행 → generation_params (프롬프트·수정 이력)
@@ -409,9 +536,10 @@ ORDER BY avg_engagement DESC;
 
 [4] 분석 루프 실행
     루프 1·2·3 쿼리 → Agent 제안 품질 향상
+    루프 4 (주 1회) → account_personas 성과 기반 자동 강화
 
-[5] 향상된 제안 → 더 높은 성과 → 더 많은 데이터 축적
+[5] 향상된 페르소나 → 더 일관된 콘텐츠 → 더 높은 성과
     → 루프 반복
 ```
 
-현재 구조에서 [3]까지는 데이터가 존재하지만 연결이 끊겨 있습니다. [1][2]는 Agent-first 전환 시 신규 생성됩니다. `content_performance_map`이 이 세 소스를 하나의 집계 테이블로 묶는 연결 키입니다.
+현재 구조에서 [3]까지는 데이터가 존재하지만 연결이 끊겨 있습니다. [0]은 계정 연동 온보딩에서 신규 추가됩니다. [1][2]는 Agent-first 전환 시 신규 생성됩니다. `account_personas`와 `content_performance_map`이 이 루프를 단건 콘텐츠 생성에서 계정 단위 장기 학습으로 확장하는 두 축입니다.
