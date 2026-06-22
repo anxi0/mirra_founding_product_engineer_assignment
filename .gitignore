@@ -1,2 +1,3 @@
 .vercel
 poc/.env.local
+.gstack/

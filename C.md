@@ -17,7 +17,7 @@ npm run dev  # http://localhost:3000
 ```
 
 > 요구사항: Node ≥ 18. 외부 DB, API key 없이 즉시 실행 가능.
-> Vercel 배포 버전: https://mirra-founding-product-engineer-assignment.vercel.app
+> Vercel 배포 버전: https://poc-three-blush.vercel.app/
 
 ---
 
