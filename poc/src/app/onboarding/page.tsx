@@ -11,6 +11,7 @@ type Step =
   | "sns-select"
   | "connecting"
   | "connected"
+  | "content-source"
   | "expand"
   | "ideas"
   | "ideas-result"
@@ -215,6 +216,208 @@ function ConnectedScreen({ platform, onPublish }: { platform: Platform; onPublis
       >
         첫 콘텐츠 만들고 발행하기 →
       </button>
+    </div>
+  );
+}
+
+type SourceType = "original" | "web" | "internal";
+
+const SOURCE_OPTIONS: { id: SourceType; label: string; sub: string; icon: React.ReactNode }[] = [
+  {
+    id: "original", label: "자체 창작", sub: "브랜드 관점으로 직접 기획",
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>,
+  },
+  {
+    id: "web", label: "웹 검색", sub: "트렌드·검색어 기반 아이디어",
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-6 h-6"><circle cx="11" cy="11" r="8"/><path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35"/></svg>,
+  },
+  {
+    id: "internal", label: "내 자료 탐색", sub: "내 경험·데이터에서 발굴",
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1 1 .03 2.798-1.442 2.798H4.24c-1.47 0-2.441-1.798-1.442-2.798L4.2 15.3"/></svg>,
+  },
+];
+
+type IdeaCard = { title: string; desc: string };
+
+function parseIdeas(raw: string): IdeaCard[] {
+  return raw
+    .split("---")
+    .map(block => {
+      const titleMatch = block.match(/제목[:：]\s*(.+)/);
+      const descMatch = block.match(/설명[:：]\s*([\s\S]+?)(?=제목|$)/);
+      return {
+        title: titleMatch?.[1]?.trim() ?? "",
+        desc: descMatch?.[1]?.trim() ?? "",
+      };
+    })
+    .filter(c => c.title);
+}
+
+function ContentSourceScreen({
+  platform,
+  onDone,
+  onBack,
+}: {
+  platform: Platform;
+  onDone: () => void;
+  onBack: () => void;
+}) {
+  const [source, setSource] = useState<SourceType>("original");
+  const [topic, setTopic] = useState("");
+  const [streaming, setStreaming] = useState(false);
+  const [raw, setRaw] = useState("");
+  const [ideas, setIdeas] = useState<IdeaCard[]>([]);
+  const [done, setDone] = useState(false);
+
+  const placeholders: Record<SourceType, string> = {
+    original: "예) 카페 창업 스토리, 피부 관리 루틴, 헬스 홈트레이닝...",
+    web: "예) 2025 인스타그램 트렌드, 소자본 창업, 비건 디저트...",
+    internal: "예) 최근 방문 고객 후기, 매장 리뉴얼 과정, 직원 비하인드...",
+  };
+
+  const handleGenerate = async () => {
+    if (!topic.trim() || streaming) return;
+    setStreaming(true);
+    setRaw("");
+    setIdeas([]);
+    setDone(false);
+    await trackEvent("ideas_generated", { source, topic, platform });
+
+    try {
+      const res = await fetch("/api/ideas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source, topic, platform }),
+      });
+      if (!res.ok || !res.body) throw new Error();
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulated = "";
+
+      while (true) {
+        const { done: d, value } = await reader.read();
+        if (d) break;
+        const chunk = decoder.decode(value, { stream: true });
+        for (const line of chunk.split("\n")) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") break;
+          try {
+            const delta = JSON.parse(data)?.choices?.[0]?.delta?.content;
+            if (delta) {
+              accumulated += delta;
+              setRaw(accumulated);
+            }
+          } catch { /* skip */ }
+        }
+      }
+      setIdeas(parseIdeas(accumulated));
+      setDone(true);
+    } catch {
+      setRaw("오류가 발생했어요. 다시 시도해주세요.");
+      setDone(true);
+    } finally {
+      setStreaming(false);
+    }
+  };
+
+  return (
+    <div>
+      <Progress current={4} total={5} />
+      <BackButton onClick={onBack} />
+      <h1 className="text-xl font-bold text-gray-900 mb-1">콘텐츠 기획받기</h1>
+      <p className="text-sm text-gray-500 mb-4">어디서 소재를 찾아볼까요?</p>
+
+      {/* 소재 선택 */}
+      <div className="grid grid-cols-3 gap-2 mb-4">
+        {SOURCE_OPTIONS.map(opt => (
+          <button
+            key={opt.id}
+            onClick={() => setSource(opt.id)}
+            className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-center transition-all ${
+              source === opt.id
+                ? "border-purple-400 bg-purple-50 text-purple-700"
+                : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
+            }`}
+          >
+            {opt.icon}
+            <span className="text-xs font-semibold leading-tight">{opt.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* 주제 입력 */}
+      {!done && (
+        <>
+          <textarea
+            className="w-full border border-gray-200 rounded-xl p-3.5 text-sm resize-none outline-none focus:ring-2 focus:ring-purple-400 mb-3"
+            style={{ color: "#000" }}
+            placeholder={placeholders[source]}
+            rows={3}
+            value={topic}
+            onChange={e => setTopic(e.target.value)}
+            disabled={streaming}
+          />
+          <button
+            onClick={handleGenerate}
+            disabled={!topic.trim() || streaming}
+            className="w-full py-3 bg-purple-600 text-white text-sm font-semibold rounded-xl hover:bg-purple-500 disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
+          >
+            {streaming ? (
+              <><span className="animate-spin">✦</span> 콘텐츠 기획 중...</>
+            ) : (
+              "✦ 콘텐츠 추천받기"
+            )}
+          </button>
+        </>
+      )}
+
+      {/* 스트리밍 중 raw 텍스트 미리보기 */}
+      {streaming && raw && (
+        <div className="mt-4 p-3 bg-gray-50 rounded-xl text-xs text-gray-500 whitespace-pre-wrap max-h-40 overflow-y-auto">
+          {raw}
+          <span className="animate-pulse">▋</span>
+        </div>
+      )}
+
+      {/* 결과 카드 */}
+      {done && ideas.length > 0 && (
+        <div className="mt-4 space-y-2">
+          <p className="text-sm font-semibold text-gray-700 mb-2">아이디어 {ideas.length}개 생성 완료!</p>
+          {ideas.map((idea, i) => (
+            <div key={i} className="flex gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+              <span className="text-purple-500 font-bold text-xs w-4 shrink-0 mt-0.5">{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-gray-900 leading-snug mb-0.5">{idea.title}</div>
+                {idea.desc && <div className="text-xs text-gray-500 leading-snug">{idea.desc}</div>}
+              </div>
+            </div>
+          ))}
+          <button
+            onClick={onDone}
+            className="w-full mt-3 py-3 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-500 transition-colors"
+          >
+            이 아이디어로 발행하러 가기 →
+          </button>
+          <button
+            onClick={() => { setDone(false); setRaw(""); setIdeas([]); }}
+            className="w-full py-2 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            다시 생성하기
+          </button>
+        </div>
+      )}
+
+      {/* raw fallback (파싱 실패 시) */}
+      {done && ideas.length === 0 && raw && (
+        <div className="mt-4 p-3 bg-gray-50 rounded-xl text-sm text-gray-700 whitespace-pre-wrap">
+          {raw}
+          <button onClick={onDone} className="mt-3 w-full py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-500 transition-colors">
+            발행하러 가기 →
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -480,8 +683,7 @@ export default function OnboardingPage() {
 
   const handlePublish = useCallback(async () => {
     if (platform) await trackEvent("first_publish_clicked", { platform });
-    await trackEvent("expand_nudge_shown", { from_platform: platform });
-    setStep("expand");
+    setStep("content-source");
   }, [platform]);
 
   const handleDone = useCallback(async () => {
@@ -506,6 +708,17 @@ export default function OnboardingPage() {
 
         {step === "connected" && platform && (
           <ConnectedScreen platform={platform} onPublish={handlePublish} />
+        )}
+
+        {step === "content-source" && platform && (
+          <ContentSourceScreen
+            platform={platform}
+            onDone={async () => {
+              await trackEvent("expand_nudge_shown", { from_platform: platform });
+              setStep("expand");
+            }}
+            onBack={() => setStep("connected")}
+          />
         )}
 
         {step === "expand" && platform && (
