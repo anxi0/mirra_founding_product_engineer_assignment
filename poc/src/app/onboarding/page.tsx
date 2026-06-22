@@ -421,11 +421,8 @@ export default function OnboardingPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-        <div className="flex items-center gap-2 mb-6">
-          <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
-            <span className="text-white text-xs font-bold">M</span>
-          </div>
-          <span className="font-semibold text-gray-800">Mirra</span>
+        <div className="mb-6">
+          <img src="https://www.mirra.my/images/logos/mirr-logo-20260401.svg" alt="Mirra" className="h-7" />
         </div>
 
         {step === "survey" && <SurveyScreen onSelect={handleSurvey} />}

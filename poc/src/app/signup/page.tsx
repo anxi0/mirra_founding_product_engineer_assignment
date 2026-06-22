@@ -16,11 +16,8 @@ export default function SignupPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-        <div className="flex items-center gap-2 mb-8">
-          <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
-            <span className="text-white text-xs font-bold">M</span>
-          </div>
-          <span className="font-semibold text-gray-800">Mirra</span>
+        <div className="mb-8">
+          <img src="https://www.mirra.my/images/logos/mirr-logo-20260401.svg" alt="Mirra" className="h-8" />
         </div>
 
         <h1 className="text-xl font-bold text-gray-900 mb-1">무료로 시작하기</h1>
