@@ -327,61 +327,116 @@ function IdeasResultScreen({ onPublish }: { onPublish: () => void }) {
   );
 }
 
+type ChatMessage = { role: "user" | "assistant"; content: string };
+
 function ChatScreen({ onBack, onConnect }: { onBack: () => void; onConnect: () => void }) {
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<{ role: "user" | "ai"; text: string }[]>([
-    { role: "ai", text: "어떤 걸 원하시는지 말씀해주세요. 목적에 맞게 Mirra를 안내해드릴게요 😊" },
-  ]);
-  const [replied, setReplied] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [streaming, setStreaming] = useState(false);
+  const [showCta, setShowCta] = useState(false);
+  const bottomRef = React.useRef<HTMLDivElement>(null);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
-    setMessages(m => [...m, { role: "user", text: input }]);
+  const GREETING = "어떤 걸 원하시는지 말씀해주세요. 목적에 맞게 Mirra를 안내해드릴게요.";
+
+  const scrollToBottom = () => bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+
+  const handleSend = async () => {
+    if (!input.trim() || streaming) return;
+    const userMsg: ChatMessage = { role: "user", content: input.trim() };
+    const next = [...messages, userMsg];
+    setMessages(next);
     setInput("");
-    setTimeout(() => {
-      setMessages(m => [...m, {
-        role: "ai",
-        text: "말씀해주신 내용을 바탕으로, SNS 계정을 연동하고 첫 콘텐츠를 만들어보시는 게 가장 빠른 시작일 것 같아요. 어떤 채널부터 시작해볼까요?",
-      }]);
-      setReplied(true);
-    }, 900);
+    setStreaming(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: next }),
+      });
+      if (!res.ok || !res.body) throw new Error("API error");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let aiText = "";
+      setMessages(m => [...m, { role: "assistant", content: "" }]);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        for (const line of chunk.split("\n")) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") break;
+          try {
+            const delta = JSON.parse(data)?.choices?.[0]?.delta?.content;
+            if (delta) {
+              aiText += delta;
+              setMessages(m => [
+                ...m.slice(0, -1),
+                { role: "assistant", content: aiText },
+              ]);
+              scrollToBottom();
+            }
+          } catch { /* skip malformed */ }
+        }
+      }
+
+      setShowCta(true);
+    } catch {
+      setMessages(m => [...m.slice(0, -1), { role: "assistant", content: "오류가 발생했어요. 다시 시도해주세요." }]);
+    } finally {
+      setStreaming(false);
+      scrollToBottom();
+    }
   };
+
+  const allMessages = [
+    { role: "assistant" as const, content: GREETING },
+    ...messages,
+  ];
 
   return (
     <div>
       <Progress current={2} total={4} />
       <BackButton onClick={onBack} />
       <h1 className="text-xl font-bold text-gray-900 mb-4">어떤 게 필요하신가요?</h1>
-      <div className="space-y-3 mb-4 min-h-32">
-        {messages.map((m, i) => (
+      <div className="space-y-3 mb-4 min-h-32 max-h-72 overflow-y-auto pr-1">
+        {allMessages.map((m, i) => (
           <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
             <div className={`max-w-xs px-4 py-2.5 rounded-2xl text-sm ${
               m.role === "user" ? "bg-blue-600 text-white rounded-br-sm" : "bg-gray-100 text-gray-800 rounded-bl-sm"
             }`}>
-              {m.text}
+              {m.content || <span className="opacity-40">▋</span>}
             </div>
           </div>
         ))}
+        <div ref={bottomRef} />
       </div>
-      {replied ? (
+      {showCta && (
         <button onClick={onConnect} className="w-full py-3 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-500 transition-colors mb-3">
           SNS 연동하러 가기 →
         </button>
-      ) : (
-        <div className="flex gap-2">
-          <input
-            className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-            style={{ color: "#000" }}
-            placeholder="자유롭게 입력해주세요..."
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && handleSend()}
-          />
-          <button onClick={handleSend} disabled={!input.trim()} className="px-4 py-2.5 bg-blue-600 text-white text-sm rounded-xl hover:bg-blue-500 disabled:opacity-40 transition-colors">
-            전송
-          </button>
-        </div>
       )}
+      <div className="flex gap-2">
+        <input
+          className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+          style={{ color: "#000" }}
+          placeholder="자유롭게 입력해주세요..."
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && handleSend()}
+          disabled={streaming}
+        />
+        <button
+          onClick={handleSend}
+          disabled={!input.trim() || streaming}
+          className="px-4 py-2.5 bg-blue-600 text-white text-sm rounded-xl hover:bg-blue-500 disabled:opacity-40 transition-colors"
+        >
+          {streaming ? "…" : "전송"}
+        </button>
+      </div>
     </div>
   );
 }
