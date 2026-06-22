@@ -11,6 +11,7 @@ type Step =
   | "sns-select"
   | "connecting"
   | "connected"
+  | "content-type"
   | "content-source"
   | "expand"
   | "ideas"
@@ -279,17 +280,62 @@ function parseIdeas(raw: string): IdeaCard[] {
     .filter(c => c.title);
 }
 
+function ContentTypeScreen({
+  platform,
+  onSelect,
+  onBack,
+}: {
+  platform: Platform;
+  onSelect: (t: ContentType) => void;
+  onBack: () => void;
+}) {
+  const types = PLATFORM_CONTENT_TYPES[platform];
+  return (
+    <div>
+      <Progress current={4} total={5} />
+      <BackButton onClick={onBack} />
+      <h1 className="text-xl font-bold text-gray-900 mb-1">뭘 만들어볼까요?</h1>
+      <p className="text-sm text-gray-500 mb-6">
+        {PLATFORM_LABEL[platform]}에서 지원하는 콘텐츠 유형이에요
+      </p>
+      <div className="space-y-3">
+        {types.map(type => {
+          const meta = CONTENT_TYPE_META[type];
+          return (
+            <button
+              key={type}
+              onClick={() => onSelect(type)}
+              className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50 transition-all text-left group"
+            >
+              <div className="w-10 h-10 rounded-xl bg-gray-100 group-hover:bg-blue-100 flex items-center justify-center text-gray-500 group-hover:text-blue-600 transition-colors shrink-0">
+                {meta.icon}
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-gray-900">{meta.label}</div>
+                <div className="text-xs text-gray-400 mt-0.5">{meta.sub}</div>
+              </div>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4 ml-auto text-gray-300 group-hover:text-blue-400 transition-colors shrink-0">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
+              </svg>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ContentSourceScreen({
   platform,
+  contentType,
   onDone,
   onBack,
 }: {
   platform: Platform;
+  contentType: ContentType;
   onDone: () => void;
   onBack: () => void;
 }) {
-  const availableTypes = PLATFORM_CONTENT_TYPES[platform];
-  const [contentType, setContentType] = useState<ContentType>(availableTypes[0]);
   const [source, setSource] = useState<SourceType>("original");
   const [topic, setTopic] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -355,30 +401,12 @@ function ContentSourceScreen({
       <Progress current={4} total={5} />
       <BackButton onClick={onBack} />
       <h1 className="text-xl font-bold text-gray-900 mb-1">콘텐츠 기획받기</h1>
-      <p className="text-sm text-gray-500 mb-4">{PLATFORM_LABEL[platform]}에서 만들 콘텐츠 유형을 선택하세요</p>
-
-      {/* 콘텐츠 유형 선택 */}
-      <div className={`grid gap-2 mb-5 ${availableTypes.length === 1 ? "grid-cols-1" : availableTypes.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
-        {availableTypes.map(type => {
-          const meta = CONTENT_TYPE_META[type];
-          return (
-            <button
-              key={type}
-              onClick={() => setContentType(type)}
-              className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all ${
-                contentType === type
-                  ? "border-blue-400 bg-blue-50 text-blue-700"
-                  : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
-              }`}
-            >
-              <span className={contentType === type ? "text-blue-600" : "text-gray-400"}>{meta.icon}</span>
-              <div>
-                <div className="text-xs font-semibold leading-tight">{meta.label}</div>
-                <div className="text-[10px] text-gray-400 leading-tight mt-0.5">{meta.sub}</div>
-              </div>
-            </button>
-          );
-        })}
+      <div className="flex items-center gap-2 mb-4">
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-xs font-medium text-blue-700">
+          {CONTENT_TYPE_META[contentType].icon}
+          {CONTENT_TYPE_META[contentType].label}
+        </span>
+        <span className="text-xs text-gray-400">{PLATFORM_LABEL[platform]}</span>
       </div>
 
       <p className="text-xs font-semibold text-gray-500 mb-2">어디서 소재를 찾아볼까요?</p>
@@ -713,6 +741,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState<Step>("survey");
   const [choice, setChoice] = useState<SurveyChoice | null>(null);
   const [platform, setPlatform] = useState<Platform | null>(null);
+  const [contentType, setContentType] = useState<ContentType | null>(null);
 
   const handleSurvey = useCallback(async (c: SurveyChoice) => {
     setChoice(c);
@@ -734,10 +763,21 @@ export default function OnboardingPage() {
     }, 1800);
   }, []);
 
-  const handlePublish = useCallback(async () => {
-    if (platform) await trackEvent("first_publish_clicked", { platform });
+  const handlePublish = useCallback(async (p: Platform) => {
+    await trackEvent("first_publish_clicked", { platform: p });
+    const types = PLATFORM_CONTENT_TYPES[p];
+    if (types.length > 1) {
+      setStep("content-type");
+    } else {
+      setContentType(types[0]);
+      setStep("content-source");
+    }
+  }, []);
+
+  const handleContentTypeSelect = useCallback((t: ContentType) => {
+    setContentType(t);
     setStep("content-source");
-  }, [platform]);
+  }, []);
 
   const handleDone = useCallback(async () => {
     await completeOnboarding();
@@ -760,17 +800,29 @@ export default function OnboardingPage() {
         {step === "connecting" && platform && <ConnectingScreen platform={platform} />}
 
         {step === "connected" && platform && (
-          <ConnectedScreen platform={platform} onPublish={handlePublish} />
+          <ConnectedScreen platform={platform} onPublish={() => handlePublish(platform)} />
         )}
 
-        {step === "content-source" && platform && (
+        {step === "content-type" && platform && (
+          <ContentTypeScreen
+            platform={platform}
+            onSelect={handleContentTypeSelect}
+            onBack={() => setStep("connected")}
+          />
+        )}
+
+        {step === "content-source" && platform && contentType && (
           <ContentSourceScreen
             platform={platform}
+            contentType={contentType}
             onDone={async () => {
               await trackEvent("expand_nudge_shown", { from_platform: platform });
               setStep("expand");
             }}
-            onBack={() => setStep("connected")}
+            onBack={() => {
+              const types = PLATFORM_CONTENT_TYPES[platform];
+              setStep(types.length > 1 ? "content-type" : "connected");
+            }}
           />
         )}
 
