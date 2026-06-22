@@ -1,268 +1,435 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 
-type Counts = {
-  ideas: number; generations: number; posts: number; analytics: number;
-  cpm: number; cpm_linked: number; agent_queries: number;
+// ── 타입 ────────────────────────────────────────────────────────────────────
+
+type Step =
+  | "survey"
+  | "sns-select"
+  | "connecting"
+  | "connected"
+  | "expand"
+  | "ideas"
+  | "ideas-result"
+  | "chat";
+
+type SurveyChoice = 1 | 2 | 3 | 4 | 5;
+type Platform = "instagram" | "tiktok" | "kakao";
+
+const SURVEY_OPTIONS: { id: SurveyChoice; label: string; sub: string; emoji: string }[] = [
+  { id: 1, emoji: "🤖", label: "페르소나 생성으로 SNS를 자동화하고 싶어요", sub: "AI가 내 브랜드 톤으로 콘텐츠를 자동 생성" },
+  { id: 2, emoji: "📈", label: "이미 있는 SNS 계정의 성과를 높이고 싶어요", sub: "참여율·노출·저장 지표를 데이터로 개선" },
+  { id: 3, emoji: "✍️", label: "글을 한 번 원격으로 써보고 싶어요", sub: "AI 초안을 받아 빠르게 발행까지" },
+  { id: 4, emoji: "💡", label: "글을 쓸 아이디어가 없어서 활용해보고 싶어요", sub: "콘텐츠 아이디어 발산부터 시작" },
+  { id: 5, emoji: "💬", label: "다른 생각이 있어요", sub: "직접 말씀해주시면 맞춤 안내드릴게요" },
+];
+
+const PLATFORMS: { id: Platform; label: string; emoji: string; color: string }[] = [
+  { id: "instagram", label: "인스타그램", emoji: "📸", color: "from-purple-500 to-pink-500" },
+  { id: "tiktok",    label: "틱톡",       emoji: "🎵", color: "from-gray-900 to-gray-700" },
+  { id: "kakao",     label: "카카오채널",  emoji: "💬", color: "from-yellow-400 to-yellow-300" },
+];
+
+const PLATFORM_LABEL: Record<Platform, string> = {
+  instagram: "인스타그램",
+  tiktok: "틱톡",
+  kakao: "카카오채널",
 };
 
-type Loop1Row = { source_type: string; post_count: number; avg_engagement_pct: number; avg_impressions: number; avg_ctr_pct: number };
-type Loop2Row = { platform: string; post_count: number; avg_engagement_pct: number; avg_impressions: number; total_likes: number; total_saves: number };
-type Loop3Row = { intent_type: string; target_platform: string | null; content_format: string | null; query_count: number; accepted_count: number; avg_engagement_pct: number | null; avg_edits: number };
+// ── 유틸 ────────────────────────────────────────────────────────────────────
 
-type AnalyticsData = { loop1: Loop1Row[]; loop2: Loop2Row[]; loop3: Loop3Row[]; counts: Counts };
-type AgentQueryRow = { id: string; raw_query: string; intent_type: string; target_platform: string | null; content_format: string | null; resolved_action: string | null; created_at: string };
-
-const PLATFORM_EMOJI: Record<string, string> = { instagram: "📸", tiktok: "🎵", kakao: "💬" };
-const INTENT_COLOR: Record<string, string> = {
-  create: "bg-blue-100 text-blue-700",
-  schedule: "bg-purple-100 text-purple-700",
-  analyze: "bg-green-100 text-green-700",
-  edit: "bg-yellow-100 text-yellow-700",
-  ask: "bg-gray-100 text-gray-600",
-};
-
-function Badge({ label, className }: { label: string; className?: string }) {
-  return <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${className ?? "bg-gray-100 text-gray-600"}`}>{label}</span>;
-}
-
-function StatCard({ label, value, sub }: { label: string; value: number | string; sub?: string }) {
+function Progress({ current, total }: { current: number; total: number }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <div className="text-2xl font-bold text-gray-900">{value}</div>
-      <div className="text-sm text-gray-500 mt-0.5">{label}</div>
-      {sub && <div className="text-xs text-gray-400 mt-1">{sub}</div>}
+    <div className="w-full h-1 bg-gray-100 rounded-full mb-8">
+      <div
+        className="h-full bg-blue-500 rounded-full transition-all duration-500"
+        style={{ width: `${(current / total) * 100}%` }}
+      />
     </div>
   );
 }
 
-function EngBar({ pct }: { pct: number }) {
-  const w = Math.min(100, (pct / 15) * 100);
-  const color = pct >= 10 ? "bg-emerald-400" : pct >= 7 ? "bg-amber-400" : "bg-red-300";
+function BackButton({ onClick }: { onClick: () => void }) {
   return (
-    <div className="flex items-center gap-2">
-      <div className="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${w}%` }} />
+    <button onClick={onClick} className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 mb-6 transition-colors">
+      ← 뒤로
+    </button>
+  );
+}
+
+// ── 화면 컴포넌트 ────────────────────────────────────────────────────────────
+
+function SurveyScreen({ onSelect }: { onSelect: (c: SurveyChoice) => void }) {
+  const [hovered, setHovered] = useState<SurveyChoice | null>(null);
+  return (
+    <div>
+      <Progress current={1} total={4} />
+      <h1 className="text-2xl font-bold text-gray-900 mb-1">Mirra에서 무엇을 하고 싶으세요?</h1>
+      <p className="text-sm text-gray-500 mb-6">목적에 맞는 시작 경로를 안내해드릴게요</p>
+      <div className="space-y-3">
+        {SURVEY_OPTIONS.map(opt => (
+          <button
+            key={opt.id}
+            onClick={() => onSelect(opt.id)}
+            onMouseEnter={() => setHovered(opt.id)}
+            onMouseLeave={() => setHovered(null)}
+            className={`w-full flex items-center gap-4 p-4 rounded-xl border text-left transition-all duration-150
+              ${hovered === opt.id ? "border-blue-400 bg-blue-50 shadow-sm" : "border-gray-200 bg-white hover:border-gray-300"}`}
+          >
+            <span className="text-2xl w-8 shrink-0">{opt.emoji}</span>
+            <div>
+              <div className="text-sm font-semibold text-gray-900">{opt.label}</div>
+              <div className="text-xs text-gray-400 mt-0.5">{opt.sub}</div>
+            </div>
+            <span className="ml-auto text-gray-300">›</span>
+          </button>
+        ))}
       </div>
-      <span className="text-sm font-medium">{pct}%</span>
     </div>
   );
 }
 
-export default function Dashboard() {
-  const [data, setData] = useState<AnalyticsData | null>(null);
-  const [queries, setQueries] = useState<AgentQueryRow[]>([]);
-  const [queryInput, setQueryInput] = useState("");
-  const [loading, setLoading] = useState<string | null>(null);
-  const [log, setLog] = useState<string[]>([]);
-
-  const addLog = (msg: string) => setLog(p => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...p.slice(0, 9)]);
-
-  const fetchAnalytics = useCallback(async () => {
-    const res = await fetch("/api/analytics");
-    const json = await res.json();
-    setData(json);
-    const res2 = await fetch("/api/agent-query");
-    setQueries(await res2.json());
-  }, []);
-
-  const handleSeed = async () => {
-    setLoading("seed");
-    const res = await fetch("/api/seed", { method: "POST" });
-    const json = await res.json();
-    addLog(`시드 완료 — ideas:${json.counts.contentIdeas} gen:${json.counts.carouselGenerations} posts:${json.counts.scheduledPosts} | cpm:${json.contentPerformanceMap}개 (백필 전)`);
-    await fetchAnalytics();
-    setLoading(null);
-  };
-
-  const handleBackfill = async () => {
-    setLoading("backfill");
-    const res = await fetch("/api/backfill", { method: "POST" });
-    const json = await res.json();
-    addLog(`백필 완료 — content_performance_map: ${json.before} → ${json.after}개`);
-    await fetchAnalytics();
-    setLoading(null);
-  };
-
-  const handleQuery = async () => {
-    if (!queryInput.trim()) return;
-    setLoading("query");
-    const res = await fetch("/api/agent-query", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: queryInput }),
-    });
-    const json = await res.json();
-    addLog(`쿼리 분류 — intent:${json.intentType} platform:${json.targetPlatform ?? "-"} format:${json.contentFormat ?? "-"} action:${json.resolvedAction ?? "-"}`);
-    setQueryInput("");
-    await fetchAnalytics();
-    setLoading(null);
-  };
+function SnsSelectScreen({
+  choice,
+  onSelect,
+  onBack,
+}: {
+  choice: SurveyChoice;
+  onSelect: (p: Platform) => void;
+  onBack: () => void;
+}) {
+  const label =
+    choice === 1 ? "자동화할" :
+    choice === 2 ? "성과를 높일" :
+    "글을 발행할";
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6 max-w-5xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Mirra 플라이휠 PoC</h1>
-        <p className="text-sm text-gray-500 mt-1">기획 → 생성 → 발행 → 성과 4-hop 연결 데이터 파이프라인</p>
+    <div>
+      <Progress current={2} total={4} />
+      <BackButton onClick={onBack} />
+      <h1 className="text-2xl font-bold text-gray-900 mb-1">{label} SNS를 선택해주세요</h1>
+      <p className="text-sm text-gray-500 mb-6">계정을 연동하면 발행·성과 분석·자동화가 활성화됩니다</p>
+      <div className="grid grid-cols-3 gap-3">
+        {PLATFORMS.map(p => (
+          <button
+            key={p.id}
+            onClick={() => onSelect(p.id)}
+            className="flex flex-col items-center gap-3 p-5 rounded-xl border border-gray-200 bg-white hover:border-blue-400 hover:shadow-sm transition-all"
+          >
+            <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${p.color} flex items-center justify-center text-2xl`}>
+              {p.emoji}
+            </div>
+            <span className="text-sm font-medium text-gray-800">{p.label}</span>
+          </button>
+        ))}
       </div>
+      <p className="text-xs text-gray-400 text-center mt-4">연동은 30초면 됩니다. 언제든 추가·해제할 수 있어요.</p>
+    </div>
+  );
+}
 
-      {/* 컨트롤 */}
-      <div className="flex gap-3 mb-6 flex-wrap">
-        <button
-          onClick={handleSeed}
-          disabled={!!loading}
-          className="px-4 py-2 bg-gray-800 text-white text-sm rounded-lg hover:bg-gray-700 disabled:opacity-40 transition-colors"
-        >
-          {loading === "seed" ? "로딩..." : "1. 시드 데이터 삽입"}
-        </button>
-        <button
-          onClick={handleBackfill}
-          disabled={!!loading}
-          className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-500 disabled:opacity-40 transition-colors"
-        >
-          {loading === "backfill" ? "로딩..." : "2. 백필 실행 (4-hop 연결)"}
-        </button>
-        <button
-          onClick={fetchAnalytics}
-          disabled={!!loading}
-          className="px-4 py-2 bg-white border border-gray-300 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-40 transition-colors"
-        >
-          새로고침
-        </button>
+function ConnectingScreen({ platform }: { platform: Platform }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <Progress current={3} total={4} />
+      <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mb-4 animate-pulse">
+        <span className="text-3xl">{PLATFORMS.find(p => p.id === platform)?.emoji}</span>
       </div>
+      <h2 className="text-lg font-semibold text-gray-900 mb-1">{PLATFORM_LABEL[platform]} 연동 중...</h2>
+      <p className="text-sm text-gray-400">OAuth 인증 창이 열렸습니다. 로그인 후 권한을 허용해주세요.</p>
+    </div>
+  );
+}
 
-      {/* 상태 카드 */}
-      {data && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <StatCard label="content_ideas" value={data.counts.ideas} />
-          <StatCard label="carousel_generations" value={data.counts.generations} />
-          <StatCard label="scheduled_posts" value={data.counts.posts} />
-          <StatCard label="post_analytics" value={data.counts.analytics} />
-          <StatCard
-            label="content_performance_map"
-            value={data.counts.cpm}
-            sub={data.counts.cpm === 0 ? "⚠ 백필 전 — 분석 불가" : `기획 연결 ${data.counts.cpm_linked}개 / 미연결 ${data.counts.cpm - data.counts.cpm_linked}개`}
-          />
-          <StatCard label="agent_queries" value={data.counts.agent_queries} />
+function ConnectedScreen({
+  platform,
+  onPublish,
+}: {
+  platform: Platform;
+  onPublish: () => void;
+}) {
+  return (
+    <div>
+      <Progress current={3} total={4} />
+      <div className="flex flex-col items-center text-center mb-8">
+        <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mb-3">
+          <span className="text-2xl">✓</span>
         </div>
-      )}
+        <h2 className="text-xl font-bold text-gray-900">{PLATFORM_LABEL[platform]} 연동 완료!</h2>
+        <p className="text-sm text-gray-500 mt-1">이제 Mirra에서 바로 발행할 수 있어요</p>
+      </div>
+      <div className="bg-gray-50 rounded-xl p-4 mb-6 text-sm text-gray-600">
+        <div className="font-medium text-gray-800 mb-2">첫 번째 콘텐츠 만들기</div>
+        <div className="space-y-1.5 text-xs text-gray-500">
+          <div className="flex items-center gap-2"><span className="text-blue-500">●</span> 주제를 입력하면 AI가 초안을 만들어드립니다</div>
+          <div className="flex items-center gap-2"><span className="text-gray-300">●</span> 수정 후 지금 바로 발행하거나 예약할 수 있어요</div>
+        </div>
+      </div>
+      <button
+        onClick={onPublish}
+        className="w-full py-3 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-500 transition-colors"
+      >
+        첫 콘텐츠 만들고 발행하기 →
+      </button>
+    </div>
+  );
+}
 
-      {/* Agent 쿼리 입력 */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
-        <div className="text-sm font-semibold text-gray-700 mb-2">Agent 쿼리 입력 (인텐트 분류 테스트)</div>
+function ExpandScreen({ platform, onDone }: { platform: Platform; onDone: () => void }) {
+  const others = PLATFORMS.filter(p => p.id !== platform);
+  return (
+    <div>
+      <Progress current={4} total={4} />
+      <div className="flex flex-col items-center text-center mb-6">
+        <div className="text-3xl mb-3">🎉</div>
+        <h2 className="text-xl font-bold text-gray-900">첫 발행 완료!</h2>
+        <p className="text-sm text-gray-500 mt-1">{PLATFORM_LABEL[platform]}에 성공적으로 올라갔어요</p>
+      </div>
+      <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-4">
+        <div className="text-sm font-semibold text-blue-800 mb-1">같은 콘텐츠, 더 많은 채널로</div>
+        <p className="text-xs text-blue-600">방금 만든 콘텐츠를 다른 SNS에 맞게 자동 변환해드릴게요. 한 번 더 올리는 데 30초면 됩니다.</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        {others.map(p => (
+          <button
+            key={p.id}
+            className="flex items-center gap-3 p-3 rounded-xl border border-gray-200 bg-white hover:border-blue-400 transition-all text-sm"
+          >
+            <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${p.color} flex items-center justify-center`}>
+              {p.emoji}
+            </div>
+            <span className="font-medium text-gray-800">{p.label}에도 올리기</span>
+          </button>
+        ))}
+      </div>
+      <button onClick={onDone} className="w-full py-2.5 text-sm text-gray-400 hover:text-gray-600 transition-colors">
+        나중에 할게요 →
+      </button>
+    </div>
+  );
+}
+
+function IdeasScreen({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
+  const [topic, setTopic] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const handleGenerate = () => {
+    if (!topic.trim()) return;
+    setGenerating(true);
+    setTimeout(() => { setGenerating(false); setDone(true); }, 1800);
+  };
+
+  if (done) return <IdeasResultScreen onPublish={onDone} />;
+
+  return (
+    <div>
+      <Progress current={2} total={4} />
+      <BackButton onClick={onBack} />
+      <h1 className="text-2xl font-bold text-gray-900 mb-1">어떤 주제로 시작할까요?</h1>
+      <p className="text-sm text-gray-500 mb-6">키워드나 업종을 입력하면 콘텐츠 아이디어를 10개 드릴게요</p>
+      <textarea
+        className="w-full border border-gray-200 rounded-xl p-4 text-sm resize-none outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+        style={{ color: "#000" }}
+        placeholder="예) 소자본 카페 창업, 피부과 시술 후기, 헬스 홈트레이닝..."
+        rows={3}
+        value={topic}
+        onChange={e => setTopic(e.target.value)}
+      />
+      <button
+        onClick={handleGenerate}
+        disabled={!topic.trim() || generating}
+        className="w-full py-3 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-500 disabled:opacity-40 transition-colors"
+      >
+        {generating ? "아이디어 생성 중..." : "아이디어 10개 만들어줘 →"}
+      </button>
+    </div>
+  );
+}
+
+function IdeasResultScreen({ onPublish }: { onPublish: () => void }) {
+  const ideas = [
+    "창업 초기 3개월, 내가 몰랐던 것들",
+    "단골 만드는 SNS 글쓰기 비법 5가지",
+    "작은 가게도 할 수 있는 콘텐츠 마케팅",
+    "고객 후기가 광고보다 강한 이유",
+    "주 1회 SNS, 3개월 만에 팔로워 1000명",
+  ];
+  return (
+    <div>
+      <Progress current={3} total={4} />
+      <h2 className="text-xl font-bold text-gray-900 mb-1">아이디어 생성 완료!</h2>
+      <p className="text-sm text-gray-500 mb-4">마음에 드는 주제로 콘텐츠를 만들어보세요</p>
+      <div className="space-y-2 mb-6">
+        {ideas.map((idea, i) => (
+          <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl text-sm">
+            <span className="text-blue-400 font-bold text-xs w-4">{i + 1}</span>
+            <span className="text-gray-800">{idea}</span>
+            <button className="ml-auto text-xs text-blue-500 hover:text-blue-700 shrink-0">선택 →</button>
+          </div>
+        ))}
+      </div>
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+        <div className="text-sm font-semibold text-amber-800 mb-1">✨ 글 만들고 바로 발행해볼까요?</div>
+        <p className="text-xs text-amber-700 mb-3">SNS 계정을 연동하면 콘텐츠를 만들자마자 바로 예약 발행할 수 있어요.</p>
+        <button
+          onClick={onPublish}
+          className="w-full py-2.5 bg-amber-500 text-white text-sm font-semibold rounded-lg hover:bg-amber-400 transition-colors"
+        >
+          예약 발행 기능 사용해보기 →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ChatScreen({ onBack, onConnect }: { onBack: () => void; onConnect: () => void }) {
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<{ role: "user" | "ai"; text: string }[]>([
+    { role: "ai", text: "어떤 걸 원하시는지 말씀해주세요. 목적에 맞게 Mirra를 안내해드릴게요 😊" },
+  ]);
+  const [replied, setReplied] = useState(false);
+
+  const handleSend = () => {
+    if (!input.trim()) return;
+    const newMessages = [...messages, { role: "user" as const, text: input }];
+    setInput("");
+    setMessages(newMessages);
+    setTimeout(() => {
+      setMessages(m => [...m, {
+        role: "ai",
+        text: "말씀해주신 내용을 바탕으로, SNS 계정을 연동하고 첫 콘텐츠를 만들어보시는 게 가장 빠른 시작일 것 같아요. 어떤 채널부터 시작해볼까요?",
+      }]);
+      setReplied(true);
+    }, 900);
+  };
+
+  return (
+    <div>
+      <Progress current={2} total={4} />
+      <BackButton onClick={onBack} />
+      <h1 className="text-xl font-bold text-gray-900 mb-4">어떤 게 필요하신가요?</h1>
+      <div className="space-y-3 mb-4 min-h-32">
+        {messages.map((m, i) => (
+          <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div className={`max-w-xs px-4 py-2.5 rounded-2xl text-sm ${
+              m.role === "user"
+                ? "bg-blue-600 text-white rounded-br-sm"
+                : "bg-gray-100 text-gray-800 rounded-bl-sm"
+            }`}>
+              {m.text}
+            </div>
+          </div>
+        ))}
+      </div>
+      {replied ? (
+        <button
+          onClick={onConnect}
+          className="w-full py-3 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-500 transition-colors mb-3"
+        >
+          SNS 연동하러 가기 →
+        </button>
+      ) : (
         <div className="flex gap-2">
           <input
-            className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="예) 인스타그램에 이번주 카드뉴스 만들어줘"
-            value={queryInput}
-            onChange={e => setQueryInput(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && handleQuery()}
+            className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+            style={{ color: "#000" }}
+            placeholder="자유롭게 입력해주세요..."
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleSend()}
           />
           <button
-            onClick={handleQuery}
-            disabled={!!loading || !queryInput.trim()}
-            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-500 disabled:opacity-40 transition-colors"
+            onClick={handleSend}
+            disabled={!input.trim()}
+            className="px-4 py-2.5 bg-blue-600 text-white text-sm rounded-xl hover:bg-blue-500 disabled:opacity-40 transition-colors"
           >
-            분류
+            전송
           </button>
         </div>
+      )}
+    </div>
+  );
+}
 
-        {queries.length > 0 && (
-          <div className="mt-3 space-y-1.5 max-h-48 overflow-y-auto">
-            {queries.map(q => (
-              <div key={q.id} className="flex items-center gap-2 text-xs text-gray-600">
-                <Badge label={q.intent_type} className={INTENT_COLOR[q.intent_type]} />
-                {q.target_platform && <Badge label={`${PLATFORM_EMOJI[q.target_platform] ?? ""} ${q.target_platform}`} />}
-                {q.content_format && <Badge label={q.content_format} />}
-                <span className="text-gray-500 truncate">{q.raw_query}</span>
-              </div>
-            ))}
+function DoneScreen() {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="text-4xl mb-4">🚀</div>
+      <h2 className="text-xl font-bold text-gray-900 mb-2">Mirra 시작 완료!</h2>
+      <p className="text-sm text-gray-500">이제 대시보드에서 모든 기능을 사용할 수 있어요.</p>
+    </div>
+  );
+}
+
+// ── 메인 ────────────────────────────────────────────────────────────────────
+
+export default function OnboardingFlow() {
+  const [step, setStep] = useState<Step>("survey");
+  const [choice, setChoice] = useState<SurveyChoice | null>(null);
+  const [platform, setPlatform] = useState<Platform | null>(null);
+
+  const handleSurvey = (c: SurveyChoice) => {
+    setChoice(c);
+    if (c === 4) setStep("ideas");
+    else if (c === 5) setStep("chat");
+    else setStep("sns-select");
+  };
+
+  const handlePlatformSelect = (p: Platform) => {
+    setPlatform(p);
+    setStep("connecting");
+    setTimeout(() => setStep("connected"), 1800);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        {/* 로고 */}
+        <div className="flex items-center gap-2 mb-6">
+          <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
+            <span className="text-white text-xs font-bold">M</span>
           </div>
+          <span className="font-semibold text-gray-800">Mirra</span>
+        </div>
+
+        {step === "survey" && <SurveyScreen onSelect={handleSurvey} />}
+
+        {step === "sns-select" && choice && (
+          <SnsSelectScreen
+            choice={choice}
+            onSelect={handlePlatformSelect}
+            onBack={() => setStep("survey")}
+          />
         )}
+
+        {step === "connecting" && platform && <ConnectingScreen platform={platform} />}
+
+        {step === "connected" && platform && (
+          <ConnectedScreen platform={platform} onPublish={() => setStep("expand")} />
+        )}
+
+        {step === "expand" && platform && (
+          <ExpandScreen platform={platform} onDone={() => setStep("done" as Step)} />
+        )}
+
+        {step === "ideas" && (
+          <IdeasScreen
+            onDone={() => setStep("sns-select")}
+            onBack={() => setStep("survey")}
+          />
+        )}
+
+        {step === "chat" && (
+          <ChatScreen
+            onBack={() => setStep("survey")}
+            onConnect={() => setStep("sns-select")}
+          />
+        )}
+
+        {(step as string) === "done" && <DoneScreen />}
       </div>
-
-      {/* 분석 루프 */}
-      {data && data.counts.cpm > 0 && (
-        <div className="space-y-4">
-          {/* 루프 1 */}
-          <div className="bg-white border border-gray-200 rounded-xl p-4">
-            <div className="font-semibold text-gray-800 mb-1">루프 1 — 기획 소스 유형별 참여율</div>
-            <div className="text-xs text-gray-400 mb-3">어떤 기획 방식이 더 높은 성과로 이어지는가 (Agent 제안 근거)</div>
-            <div className="space-y-2">
-              {data.loop1.map(r => (
-                <div key={r.source_type} className="flex items-center gap-3">
-                  <div className="w-36 text-sm text-gray-700 shrink-0">{r.source_type}</div>
-                  <EngBar pct={r.avg_engagement_pct} />
-                  <div className="text-xs text-gray-400 ml-auto">{Number(r.avg_impressions).toLocaleString()} 노출 · CTR {r.avg_ctr_pct}%</div>
-                  <Badge label={`${r.post_count}개`} />
-                </div>
-              ))}
-            </div>
-            {data.loop1.length >= 2 && (
-              <div className="mt-3 text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2">
-                💡 &quot;{data.loop1[0].source_type}&quot; 기반 콘텐츠가 &quot;{data.loop1[data.loop1.length - 1].source_type}&quot;보다 참여율{" "}
-                {(data.loop1[0].avg_engagement_pct / data.loop1[data.loop1.length - 1].avg_engagement_pct).toFixed(1)}배 높음
-              </div>
-            )}
-          </div>
-
-          {/* 루프 2 */}
-          <div className="bg-white border border-gray-200 rounded-xl p-4">
-            <div className="font-semibold text-gray-800 mb-1">루프 2 — 플랫폼별 성과</div>
-            <div className="text-xs text-gray-400 mb-3">수평 배포(기획 1개 → 여러 SNS) 우선순위 결정</div>
-            <div className="space-y-2">
-              {data.loop2.map(r => (
-                <div key={r.platform} className="flex items-center gap-3">
-                  <div className="w-36 text-sm text-gray-700 shrink-0">
-                    {PLATFORM_EMOJI[r.platform] ?? ""} {r.platform}
-                  </div>
-                  <EngBar pct={r.avg_engagement_pct} />
-                  <div className="text-xs text-gray-400 ml-auto">
-                    ♥ {Number(r.total_likes).toLocaleString()} · 🔖 {Number(r.total_saves).toLocaleString()}
-                  </div>
-                  <Badge label={`${r.post_count}개`} />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* 루프 3 */}
-          {data.loop3.length > 0 && (
-            <div className="bg-white border border-gray-200 rounded-xl p-4">
-              <div className="font-semibold text-gray-800 mb-1">루프 3 — Agent 쿼리 인텐트별 성과</div>
-              <div className="text-xs text-gray-400 mb-3">어떤 요청 패턴이 좋은 콘텐츠로 이어지는가</div>
-              <div className="space-y-2">
-                {data.loop3.map((r, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm">
-                    <Badge label={r.intent_type} className={INTENT_COLOR[r.intent_type]} />
-                    {r.target_platform && <Badge label={`${PLATFORM_EMOJI[r.target_platform] ?? ""} ${r.target_platform}`} />}
-                    {r.content_format && <Badge label={r.content_format} />}
-                    <span className="text-gray-400 text-xs ml-auto">{r.query_count}건</span>
-                    {r.avg_engagement_pct != null
-                      ? <EngBar pct={r.avg_engagement_pct} />
-                      : <span className="text-xs text-gray-300">성과 데이터 없음</span>
-                    }
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {data && data.counts.cpm === 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700">
-          ⚠ content_performance_map이 비어있습니다. &quot;2. 백필 실행&quot; 버튼을 눌러 4-hop을 연결하세요.
-        </div>
-      )}
-
-      {/* 로그 */}
-      {log.length > 0 && (
-        <div className="mt-6 bg-gray-900 rounded-xl p-4 font-mono text-xs text-green-400 space-y-1">
-          {log.map((l, i) => <div key={i}>{l}</div>)}
-        </div>
-      )}
-    </main>
+    </div>
   );
 }
