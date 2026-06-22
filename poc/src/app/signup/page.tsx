@@ -2,14 +2,12 @@
 
 import { createClient } from "@/lib/supabase/client";
 
-export default function SignupPage() {
+export default function AuthPage() {
   const handleGoogleLogin = async () => {
     const supabase = createClient();
     await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: {
-        redirectTo: `${location.origin}/auth/callback`,
-      },
+      options: { redirectTo: `${location.origin}/auth/callback` },
     });
   };
 
@@ -20,8 +18,8 @@ export default function SignupPage() {
           <img src="https://www.mirra.my/images/logos/mirr-logo-20260401.svg" alt="Mirra" className="h-8" />
         </div>
 
-        <h1 className="text-xl font-bold text-gray-900 mb-1">무료로 시작하기</h1>
-        <p className="text-sm text-gray-500 mb-6">가입 즉시 무료 체험이 시작됩니다</p>
+        <h1 className="text-xl font-bold text-gray-900 mb-1">Mirra 시작하기</h1>
+        <p className="text-sm text-gray-500 mb-6">가입과 로그인이 함께 처리됩니다</p>
 
         <button
           onClick={handleGoogleLogin}
@@ -30,11 +28,6 @@ export default function SignupPage() {
           <GoogleIcon />
           Google로 계속하기
         </button>
-
-        <p className="text-xs text-center text-gray-400 mt-6">
-          이미 계정이 있으신가요?{" "}
-          <a href="/login" className="text-blue-500 hover:underline">로그인</a>
-        </p>
       </div>
     </div>
   );
