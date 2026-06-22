@@ -221,6 +221,32 @@ function ConnectedScreen({ platform, onPublish }: { platform: Platform; onPublis
 }
 
 type SourceType = "original" | "web" | "internal";
+type ContentType = "card" | "short" | "blog";
+
+const PLATFORM_CONTENT_TYPES: Record<Platform, ContentType[]> = {
+  instagram: ["card", "short"],
+  tiktok:    ["short"],
+  threads:   ["blog"],
+  youtube:   ["short"],
+};
+
+const CONTENT_TYPE_META: Record<ContentType, { label: string; sub: string; icon: React.ReactNode }> = {
+  card: {
+    label: "카드뉴스",
+    sub: "이미지 슬라이드",
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-5 h-5"><rect x="2" y="3" width="20" height="14" rx="2"/><path strokeLinecap="round" d="M8 21h8M12 17v4"/></svg>,
+  },
+  short: {
+    label: "숏폼",
+    sub: "15~60초 세로 영상",
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z"/></svg>,
+  },
+  blog: {
+    label: "블로그 · 글",
+    sub: "텍스트 중심 긴 글",
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/></svg>,
+  },
+};
 
 const SOURCE_OPTIONS: { id: SourceType; label: string; sub: string; icon: React.ReactNode }[] = [
   {
@@ -262,6 +288,8 @@ function ContentSourceScreen({
   onDone: () => void;
   onBack: () => void;
 }) {
+  const availableTypes = PLATFORM_CONTENT_TYPES[platform];
+  const [contentType, setContentType] = useState<ContentType>(availableTypes[0]);
   const [source, setSource] = useState<SourceType>("original");
   const [topic, setTopic] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -287,7 +315,7 @@ function ContentSourceScreen({
       const res = await fetch("/api/ideas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source, topic, platform }),
+        body: JSON.stringify({ source, topic, platform, contentType }),
       });
       if (!res.ok || !res.body) throw new Error();
 
@@ -327,8 +355,33 @@ function ContentSourceScreen({
       <Progress current={4} total={5} />
       <BackButton onClick={onBack} />
       <h1 className="text-xl font-bold text-gray-900 mb-1">콘텐츠 기획받기</h1>
-      <p className="text-sm text-gray-500 mb-4">어디서 소재를 찾아볼까요?</p>
+      <p className="text-sm text-gray-500 mb-4">{PLATFORM_LABEL[platform]}에서 만들 콘텐츠 유형을 선택하세요</p>
 
+      {/* 콘텐츠 유형 선택 */}
+      <div className={`grid gap-2 mb-5 ${availableTypes.length === 1 ? "grid-cols-1" : availableTypes.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
+        {availableTypes.map(type => {
+          const meta = CONTENT_TYPE_META[type];
+          return (
+            <button
+              key={type}
+              onClick={() => setContentType(type)}
+              className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all ${
+                contentType === type
+                  ? "border-blue-400 bg-blue-50 text-blue-700"
+                  : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
+              }`}
+            >
+              <span className={contentType === type ? "text-blue-600" : "text-gray-400"}>{meta.icon}</span>
+              <div>
+                <div className="text-xs font-semibold leading-tight">{meta.label}</div>
+                <div className="text-[10px] text-gray-400 leading-tight mt-0.5">{meta.sub}</div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <p className="text-xs font-semibold text-gray-500 mb-2">어디서 소재를 찾아볼까요?</p>
       {/* 소재 선택 */}
       <div className="grid grid-cols-3 gap-2 mb-4">
         {SOURCE_OPTIONS.map(opt => (
