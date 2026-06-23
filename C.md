@@ -178,11 +178,16 @@ Vercel 배포 주소: **https://poc-three-blush.vercel.app/**
 
 ### 사용한 AI 도구 및 워크플로우
 
-| 단계 | 도구 | 역할 |
-|------|------|------|
-| 1 | **Claude Code (대화)** | 온보딩 설문 방향 정의. 선택지별 다른 플로우를 만드는 것이 맞는지 논거 검토 |
-| 2 | **Claude Code (구현)** | 상태 머신 구조, Supabase 인증 연결, API route 초안 생성 |
-| 3 | **Claude Code (QA)** | 배포 후 버튼별 플로우 동작 확인, 콘솔 에러 점검 |
+이 PoC는 Claude Code + **gstack** (Superpower) 플러그인의 하네스를 단계별로 활용해 만들었다. 아래는 실제 실행 순서다.
+
+| 단계 | 하네스 | 역할 |
+|------|--------|------|
+| 1 | **gstack `/office-hours`** | 온보딩 설문 방향 정의. 선택지별 다른 플로우를 만드는 것이 맞는지, B.md 논거와 연결되는지 10~20분 대화로 검토 |
+| 2 | **superpowers `brainstorming`** | 4개 선택지 문구 발산. 초안 10개 중 의도가 겹치는 것을 합치고 최종 4개로 정리. 각 경로의 목적 차이를 명확히 구분하는 데 활용 |
+| 3 | **superpowers `writing-plans`** | 온보딩 플로우 구현 전 단계별 계획서 작성. 상태 머신 설계, 화면 목록, DB 스키마, API route 범위를 구현 전에 정렬 |
+| 4 | **superpowers `using-git-worktrees`** | 문서(A.md·B.md·C.md) 작업과 poc/ 코드 작업을 별도 Git worktree로 격리해 컨텍스트 충돌 방지 |
+| 5 | **superpowers `subagent-driven-development`** | 각 Step 컴포넌트(PersonaScreen, AnalyticsScreen, ContentSourceScreen 등)를 독립 서브에이전트로 병렬 구현 후 통합 |
+| 6 | **gstack `/qa`** | Vercel 배포 후 4개 선택지 플로우 전체 자동 순회, 콘솔 에러·빈 입력 가드·백필 멱등성 검증, 헬스 스코어 산출 |
 
 ### AI를 사용한 부분
 
