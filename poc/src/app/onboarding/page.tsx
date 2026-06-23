@@ -11,6 +11,8 @@ type Step =
   | "sns-select"
   | "connecting"
   | "connected"
+  | "persona"
+  | "analytics"
   | "content-type"
   | "content-source"
   | "expand"
@@ -193,7 +195,8 @@ function ConnectingScreen({ platform }: { platform: Platform }) {
   );
 }
 
-function ConnectedScreen({ platform, onPublish }: { platform: Platform; onPublish: () => void }) {
+function ConnectedScreen({ platform, choice, onPublish }: { platform: Platform; choice: SurveyChoice | null; onPublish: () => void }) {
+  const isPersona = choice === 1;
   return (
     <div>
       <Progress current={3} total={4} />
@@ -202,20 +205,96 @@ function ConnectedScreen({ platform, onPublish }: { platform: Platform; onPublis
           <span className="text-2xl">✓</span>
         </div>
         <h2 className="text-xl font-bold text-gray-900">{PLATFORM_LABEL[platform]} 연동 완료!</h2>
-        <p className="text-sm text-gray-500 mt-1">이제 Mirra에서 바로 발행할 수 있어요</p>
+        <p className="text-sm text-gray-500 mt-1">
+          {isPersona ? "이제 브랜드 페르소나를 설정할게요" : "이제 Mirra에서 바로 발행할 수 있어요"}
+        </p>
       </div>
       <div className="bg-gray-50 rounded-xl p-4 mb-6 text-sm text-gray-600">
-        <div className="font-medium text-gray-800 mb-2">첫 번째 콘텐츠 만들기</div>
+        <div className="font-medium text-gray-800 mb-2">
+          {isPersona ? "페르소나 설정하기" : "첫 번째 콘텐츠 만들기"}
+        </div>
         <div className="space-y-1.5 text-xs text-gray-500">
-          <div className="flex items-center gap-2"><span className="text-blue-500">●</span> 주제를 입력하면 AI가 초안을 만들어드립니다</div>
-          <div className="flex items-center gap-2"><span className="text-gray-300">●</span> 수정 후 지금 바로 발행하거나 예약할 수 있어요</div>
+          {isPersona ? (
+            <>
+              <div className="flex items-center gap-2"><span className="text-blue-500">●</span> 브랜드 톤·타겟·금지어를 설정하면</div>
+              <div className="flex items-center gap-2"><span className="text-gray-300">●</span> AI가 일관된 브랜드 보이스로 콘텐츠를 만들어드려요</div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2"><span className="text-blue-500">●</span> 주제를 입력하면 AI가 초안을 만들어드립니다</div>
+              <div className="flex items-center gap-2"><span className="text-gray-300">●</span> 수정 후 지금 바로 발행하거나 예약할 수 있어요</div>
+            </>
+          )}
         </div>
       </div>
       <button
         onClick={onPublish}
         className="w-full py-3 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-500 transition-colors"
       >
-        첫 콘텐츠 만들고 발행하기 →
+        {isPersona ? "페르소나 설정하기 →" : "첫 콘텐츠 만들고 발행하기 →"}
+      </button>
+    </div>
+  );
+}
+
+function PersonaScreen({ platform, onDone, onBack }: { platform: Platform; onDone: () => void; onBack: () => void }) {
+  const [brandName, setBrandName] = useState("");
+  const [tone, setTone] = useState("");
+  const [forbidden, setForbidden] = useState("");
+  const [target, setTarget] = useState("");
+
+  const canSubmit = brandName.trim().length > 0;
+
+  return (
+    <div>
+      <Progress current={4} total={4} />
+      <BackButton onClick={onBack} />
+      <h1 className="text-2xl font-bold text-gray-900 mb-1">브랜드 페르소나 설정</h1>
+      <p className="text-sm text-gray-500 mb-6">AI가 이 설정을 기반으로 {PLATFORM_LABEL[platform]} 콘텐츠를 일관되게 생성해요</p>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">브랜드 이름 <span className="text-red-400">*</span></label>
+          <input
+            value={brandName}
+            onChange={e => setBrandName(e.target.value)}
+            placeholder="예) 미라 스튜디오"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">톤 키워드</label>
+          <input
+            value={tone}
+            onChange={e => setTone(e.target.value)}
+            placeholder="예) 친근한, 전문적인, 유머러스한"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">타겟 독자</label>
+          <input
+            value={target}
+            onChange={e => setTarget(e.target.value)}
+            placeholder="예) 20-30대 직장인, 소상공인"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">금지 키워드</label>
+          <input
+            value={forbidden}
+            onChange={e => setForbidden(e.target.value)}
+            placeholder="예) 최저가, 무조건, 혁신적"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        </div>
+      </div>
+      <button
+        onClick={onDone}
+        disabled={!canSubmit}
+        className="w-full mt-6 py-3 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        페르소나 저장하고 시작하기 →
       </button>
     </div>
   );
@@ -725,6 +804,114 @@ function ChatScreen({ onBack, onConnect }: { onBack: () => void; onConnect: () =
   );
 }
 
+type AnalyticsPost = {
+  title: string;
+  type: string;
+  engagement: number;
+  impressions: number;
+  saves: number;
+  insight: string;
+};
+
+const MOCK_ANALYTICS: Record<Platform, AnalyticsPost[]> = {
+  instagram: [
+    { title: "신제품 카드뉴스", type: "카드뉴스", engagement: 10.7, impressions: 6500, saves: 312, insight: "저장률이 평균 2.1배 높음" },
+    { title: "브랜드 스토리 릴스", type: "숏폼", engagement: 8.3, impressions: 4200, saves: 180, insight: "댓글 참여 활발" },
+    { title: "제품 사용법 가이드", type: "카드뉴스", engagement: 6.1, impressions: 2800, saves: 95, insight: "도달 대비 저장 낮음" },
+  ],
+  tiktok: [
+    { title: "15초 제품 하이라이트", type: "숏폼", engagement: 12.4, impressions: 9800, saves: 520, insight: "완주율 78% — 평균 대비 높음" },
+    { title: "비하인드 영상", type: "숏폼", engagement: 7.8, impressions: 5100, saves: 210, insight: "공유율이 높음" },
+    { title: "트렌드 참여 영상", type: "숏폼", engagement: 5.2, impressions: 3200, saves: 88, insight: "초반 3초 이탈 많음" },
+  ],
+  threads: [
+    { title: "업계 인사이트 스레드", type: "글", engagement: 9.1, impressions: 3400, saves: 142, insight: "리스레드 비율 높음" },
+    { title: "Q&A 시리즈", type: "글", engagement: 7.4, impressions: 2100, saves: 98, insight: "팔로워 외 도달 낮음" },
+    { title: "제품 출시 공지", type: "글", engagement: 4.8, impressions: 1800, saves: 44, insight: "링크 클릭률 낮음" },
+  ],
+  youtube: [
+    { title: "제품 언박싱 숏츠", type: "숏폼", engagement: 11.2, impressions: 8200, saves: 430, insight: "구독 전환율 높음" },
+    { title: "튜토리얼 숏츠", type: "숏폼", engagement: 8.6, impressions: 5600, saves: 290, insight: "저장 후 재시청 많음" },
+    { title: "브랜드 소개 숏츠", type: "숏폼", engagement: 5.5, impressions: 3100, saves: 110, insight: "첫 5초 이탈 있음" },
+  ],
+};
+
+function AnalyticsScreen({ platform, onDone, onBack }: { platform: Platform; onDone: () => void; onBack: () => void }) {
+  const [loading, setLoading] = useState(true);
+  const posts = MOCK_ANALYTICS[platform];
+  const avgEngagement = (posts.reduce((s, p) => s + p.engagement, 0) / posts.length).toFixed(1);
+  const topPost = posts[0];
+
+  React.useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 1800);
+    return () => clearTimeout(t);
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <Progress current={4} total={4} />
+        <div className="w-12 h-12 rounded-full border-4 border-blue-200 border-t-blue-500 animate-spin mb-4" />
+        <p className="text-sm font-semibold text-gray-700">{PLATFORM_LABEL[platform]} 콘텐츠 분석 중…</p>
+        <p className="text-xs text-gray-400 mt-1">최근 게시물 성과를 불러오고 있어요</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <Progress current={4} total={4} />
+      <BackButton onClick={onBack} />
+      <h1 className="text-xl font-bold text-gray-900 mb-1">{PLATFORM_LABEL[platform]} 성과 분석 결과</h1>
+      <p className="text-sm text-gray-500 mb-4">최근 게시물 3개 기준</p>
+
+      {/* 요약 카드 */}
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        <div className="bg-blue-50 rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-blue-600">{avgEngagement}%</div>
+          <div className="text-xs text-gray-500 mt-0.5">평균 참여율</div>
+        </div>
+        <div className="bg-green-50 rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-green-600">{topPost.impressions.toLocaleString()}</div>
+          <div className="text-xs text-gray-500 mt-0.5">최고 노출 게시물</div>
+        </div>
+      </div>
+
+      {/* 인사이트 */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-5">
+        <div className="text-xs font-semibold text-amber-700 mb-1">💡 개선 포인트</div>
+        <p className="text-xs text-amber-800">
+          <span className="font-semibold">"{topPost.title}"</span>처럼 {topPost.insight.toLowerCase()}
+          콘텐츠가 성과가 좋습니다. 이 패턴을 더 자주 활용해보세요.
+        </p>
+      </div>
+
+      {/* 게시물 목록 */}
+      <div className="space-y-2.5 mb-6">
+        {posts.map((p, i) => (
+          <div key={i} className="flex items-start gap-3 p-3 rounded-xl border border-gray-100 bg-gray-50">
+            <div className={`text-xs font-bold px-2 py-0.5 rounded-full mt-0.5 ${i === 0 ? "bg-blue-100 text-blue-700" : "bg-gray-200 text-gray-500"}`}>
+              {i === 0 ? "TOP" : `#${i + 1}`}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-semibold text-gray-800 truncate">{p.title}</div>
+              <div className="text-xs text-gray-400 mt-0.5">{p.type} · 참여율 {p.engagement}% · 저장 {p.saves}</div>
+              <div className="text-xs text-blue-500 mt-0.5">{p.insight}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={onDone}
+        className="w-full py-3 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-500 transition-colors"
+      >
+        Mirra로 성과 개선 시작하기 →
+      </button>
+    </div>
+  );
+}
+
 function DoneScreen() {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -765,6 +952,23 @@ export default function OnboardingPage() {
 
   const handlePublish = useCallback(async (p: Platform) => {
     await trackEvent("first_publish_clicked", { platform: p });
+    // choice 1 (페르소나): 페르소나 설정 페이지로
+    if (choice === 1) {
+      setStep("persona");
+      return;
+    }
+    // choice 2 (성과 높이기): 분석 결과 화면으로
+    if (choice === 2) {
+      setStep("analytics");
+      return;
+    }
+    // choice 3 (글 작성): content-type 선택 생략하고 바로 content-source로
+    if (choice === 3) {
+      const types = PLATFORM_CONTENT_TYPES[p];
+      setContentType(types[0]);
+      setStep("content-source");
+      return;
+    }
     const types = PLATFORM_CONTENT_TYPES[p];
     if (types.length > 1) {
       setStep("content-type");
@@ -772,7 +976,7 @@ export default function OnboardingPage() {
       setContentType(types[0]);
       setStep("content-source");
     }
-  }, []);
+  }, [choice]);
 
   const handleContentTypeSelect = useCallback((t: ContentType) => {
     setContentType(t);
@@ -800,7 +1004,23 @@ export default function OnboardingPage() {
         {step === "connecting" && platform && <ConnectingScreen platform={platform} />}
 
         {step === "connected" && platform && (
-          <ConnectedScreen platform={platform} onPublish={() => handlePublish(platform)} />
+          <ConnectedScreen platform={platform} choice={choice} onPublish={() => handlePublish(platform)} />
+        )}
+
+        {step === "persona" && platform && (
+          <PersonaScreen
+            platform={platform}
+            onDone={handleDone}
+            onBack={() => setStep("connected")}
+          />
+        )}
+
+        {step === "analytics" && platform && (
+          <AnalyticsScreen
+            platform={platform}
+            onDone={handleDone}
+            onBack={() => setStep("connected")}
+          />
         )}
 
         {step === "content-type" && platform && (
