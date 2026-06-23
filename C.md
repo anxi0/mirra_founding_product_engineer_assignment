@@ -4,7 +4,9 @@
 
 B에서 선택한 (가) 방향 — 퍼널 정비 — 의 핵심 진입점을 PoC로 구현한다.
 
-**핵심 명제**: "가입 직후 사용자가 뭘 해야 할지 모른다. 목적 기반 설문으로 SNS 연동까지 바로 이어지면, 현재 20~30%인 계정 연동률이 유의미하게 올라간다."
+**핵심 명제**: "가입 직후 사용자가 뭘 해야 할지 모른다. 목적 기반 설문으로 SNS 연동까지 바로 이어지면, 연동 전환율이 올라가고 Activation 속도가 빨라진다."
+
+실제 수치는 B.md Day 2 코호트 분석(PostHog)으로 확인해야 하며, 이 PoC는 그 분석이 나오기 전에 플로우 자체의 타당성을 먼저 증명하기 위한 것이다.
 
 ---
 
@@ -16,7 +18,7 @@ npm install
 npm run dev  # http://localhost:3000
 ```
 
-> 요구사항: Node ≥ 18. 외부 DB, API key 없이 즉시 실행 가능.
+> 요구사항: Node ≥ 18, `.env.local`에 Supabase 환경변수 필요.
 > Vercel 배포 버전: https://poc-three-blush.vercel.app/
 
 ---
@@ -24,47 +26,60 @@ npm run dev  # http://localhost:3000
 ## 플로우 설계
 
 ```
-가입
- └→ 설문 (5지선다)
-      ├→ [1] 페르소나로 SNS 자동화   ─┐
-      ├→ [2] 기존 SNS 성과 향상      ├→ SNS 선택 → 연동 → 첫 발행 → 다른 플랫폼 확장 넛지
-      ├→ [3] 글 한 번 원격으로 써보기 ─┘
-      ├→ [4] 아이디어가 없어서         → 기획(아이디어 입력) → 생성 완료
-      │                                  → "예약 발행 기능을 사용해보시겠어요?" CTA
-      │                                  → SNS 연동으로 유도
-      └→ [5] 다른 생각이 있어요        → LLM 대화 → 의도 파악 → SNS 연동으로 유도
+가입 (Google OAuth)
+ └→ 설문 (4지선다)
+      ├→ [1] 페르소나로 SNS 자동화   → SNS 선택 → 연동 → 페르소나 설정 → 완료
+      ├→ [2] 기존 SNS 성과 향상      → SNS 선택 → 연동 → 성과 분석 결과 → 완료
+      ├→ [3] 글 한 번 원격으로 써보기 → 콘텐츠 기획받기 → 아이디어 생성 → SNS 선택 → 연동 → 완료
+      └→ [4] 아이디어가 없어서        → 아이디어 발산 → SNS 선택 → 연동 → 완료
 ```
+
+※ 이미 SNS 연동 이력이 있는 사용자는 SNS 선택·연동 스텝을 건너뛰고 바로 목적 화면으로 이동한다.
 
 ### 설계 근거
 
-**왜 연동이 activation 기준인가**
+**왜 선택지별로 다른 경로를 만들었는가**
 
-B.md Day 2 코호트 분석 전제: PostHog 데이터에서 계정 연동 유저의 2회 사용률이 미연동 유저보다 유의미하게 높을 경우, 연동 시점을 가입 직후로 앞당기는 것이 Retention 개선의 최우선 레버가 된다.
+모든 경로를 "SNS 선택 → 첫 발행"으로 통일하면 구현이 단순하다. 그러나 사용자가 "아이디어가 없다"고 말했는데 연동부터 시키면 "연동하고 나서 뭘 하죠?"가 된다. 가치 경험(아이디어 생성, 성과 확인)을 먼저 보여준 뒤 연동 넛지를 주는 것이 저항이 낮다.
 
-**왜 4번(아이디어)은 연동 우선이 아닌가**
+**[1] 페르소나 경로가 SNS 연동 직후 페르소나 설정으로 가는 이유**
 
-아이디어가 없는 사용자는 "발행할 콘텐츠"가 아직 없다. 연동부터 시키면 "연동하고 나서 뭘 하죠?"가 된다. 기획 → 생성 → 결과물을 본 직후가 연동 동기가 가장 높은 시점이다. 가치 경험 후 넛지.
+브랜드 톤과 타겟을 AI에게 알려주는 것은 "어떤 계정을 자동화할 것인가"가 결정된 뒤에야 의미가 있다. SNS 연동 전에 페르소나를 입력받으면 어느 계정에 쓸지 모르는 설정이 된다.
 
-**왜 5번(다른 생각)은 LLM 대화인가**
+**[2] 성과 분석 경로가 mock 데이터를 쓰는 이유**
 
-정형화되지 않은 의도를 5지선다로 강제하면 이탈한다. 자유 입력 후 AI가 의도를 파악해 최적 경로로 안내하는 것이 더 자연스럽다. 모든 경로는 결국 SNS 연동으로 수렴한다.
+실제 SNS API 연동은 OAuth + 플랫폼별 API 구현이 필요해 PoC 범위를 벗어난다. mock 데이터로 "연동 후 이런 분석이 나온다"는 UX를 먼저 보여주는 것이 목적이다.
 
-**첫 발행 후 다른 플랫폼 확장 넛지**
+**[3] 글 써보기 경로가 SNS 선택을 나중으로 미루는 이유**
 
-동일 콘텐츠를 다른 SNS에 맞게 변환하는 기능은 첫 발행 성공 직후에 제안한다. "방금 만든 것 그대로 다른 채널에도"는 저항이 낮다. 가입 시점에 제안하면 피로도만 높아진다.
+글을 쓰고 싶은 사용자는 아직 어느 채널에 올릴지 결정하지 않았을 수 있다. 아이디어와 초안을 받은 뒤 "어디에 올릴까요?"가 더 자연스러운 순서다.
 
 ---
 
 ## 파일 구조
 
 ```
-poc/src/app/
-  page.tsx          — 전체 온보딩 플로우 (단일 파일, React 상태 기반)
-  globals.css       — Tailwind + 색상 고정 (다크모드 제거)
-  layout.tsx        — Next.js App Router 루트 레이아웃
+poc/
+  src/
+    app/
+      onboarding/page.tsx     — 온보딩 전체 플로우 (React 상태 머신)
+      api/
+        chat/route.ts         — [5번 경로] Claude API 스트리밍 대화
+        ideas/route.ts        — [3·4번 경로] Claude API 콘텐츠 아이디어 생성
+      auth/callback/route.ts  — Google OAuth 코드 → 세션 교환
+      login/page.tsx          — Google 로그인 진입점
+      signup/page.tsx         — 로그인과 동일 (가입/로그인 통합)
+    lib/supabase/
+      client.ts               — 브라우저 Supabase 클라이언트
+      server.ts               — 서버 Supabase 클라이언트
+      types.ts                — DB 타입 정의
+    middleware.ts             — 세션 갱신 + 인증 가드 (미로그인 → /login)
+  supabase/
+    migrations/
+      20260622000000_init.sql — profiles, connected_accounts, onboarding_events 테이블
 ```
 
-### 단일 파일 설계 이유
+### 단일 파일 설계 이유 (onboarding/page.tsx)
 
 온보딩 플로우는 상태가 선형으로 흐른다. URL 라우팅으로 나누면 "뒤로가기로 설문으로 돌아가기" 같은 UX 처리가 복잡해진다. React 상태 머신(`Step` 유니온 타입)으로 전체 흐름을 한 파일에 담아 검토와 수정이 쉽게 했다.
 
@@ -76,44 +91,58 @@ poc/src/app/
 
 ```typescript
 type Step =
-  | "survey"       // 설문 (진입점)
-  | "sns-select"   // SNS 선택 (1,2,3,5번 경로)
-  | "connecting"   // 연동 중 (로딩 상태)
-  | "connected"    // 연동 완료 → 첫 발행 CTA
-  | "expand"       // 첫 발행 후 → 다른 플랫폼 확장 넛지
-  | "ideas"        // 기획 입력 (4번 경로)
-  | "ideas-result" // 아이디어 생성 완료 → 예약 발행 CTA
-  | "chat"         // LLM 대화 (5번 경로)
-  | "done";        // 완료
-
-type SurveyChoice = 1 | 2 | 3 | 4 | 5;
-type Platform = "instagram" | "tiktok" | "kakao";
+  | "survey"        // 설문 (진입점)
+  | "sns-select"    // SNS 선택
+  | "connecting"    // 연동 중 (로딩)
+  | "connected"     // 연동 완료 → 다음 목적 화면 CTA
+  | "persona"       // [1번] 페르소나 설정 (브랜드명·톤·타겟·금지어)
+  | "analytics"     // [2번] 성과 분석 결과 (mock)
+  | "content-type"  // 콘텐츠 형식 선택 (카드뉴스·숏폼·블로그)
+  | "content-source"// [3번] 콘텐츠 기획받기 (소재 선택 + 주제 입력 + AI 생성)
+  | "expand"        // 다른 플랫폼 확장 넛지
+  | "ideas"         // [4번] 아이디어 발산 (Claude API 스트리밍)
+  | "chat"          // [5번] 자유 대화 (Claude API 스트리밍)
+  | "done";         // 완료
 ```
 
 전환 로직:
 ```
-survey  →(1,2,3)→ sns-select
-survey  →(4)→     ideas → ideas-result →(CTA 클릭)→ sns-select
-survey  →(5)→     chat  →(AI 응답 후)→  sns-select
-sns-select → connecting →(1.8초 후)→ connected → expand → done
+survey →(1,2)→ sns-select → connecting → connected →(1)→ persona → done
+                                                    →(2)→ analytics → done
+survey →(3)→   content-source → ideas 생성 → sns-select → connecting → done
+survey →(4)→   ideas → sns-select → connecting → done
 ```
 
-### 화면별 핵심 UX
+※ 연동 이력 있는 경우: `sns-select → connecting → connected` 스텝 전체 건너뜀
 
-| 화면 | 핵심 결정 |
-|------|-----------|
-| 설문 | 호버 시 하이라이트, 선택 즉시 다음 화면 이동 (confirm 버튼 없음) |
-| SNS 선택 | 3개 플랫폼 그리드. "연동은 30초면 됩니다" 부사 카피로 마찰 감소 |
-| 연동 중 | 1.8초 시뮬레이션. OAuth 창 안내 카피 |
-| 연동 완료 | 첫 콘텐츠 만들기 CTA 단일 강조 |
-| 발행 후 확장 | 다른 플랫폼 2개 카드 + "나중에 할게요" 탈출구 |
-| 기획(4번) | 아이디어 입력 → 1.8초 생성 → 5개 아이디어 목록 |
-| 아이디어 결과 | amber 색상으로 "예약 발행 기능 사용해보기" CTA 강조 |
-| 대화(5번) | 1턴 대화 후 SNS 연동 유도 응답 고정 |
+### 인증 구조
 
-### Progress Bar
+```
+Google OAuth → /auth/callback → Supabase 세션 → 쿠키 저장
+middleware.ts → getUser() → 토큰 자동 갱신 → 세션 연장
+```
 
-모든 화면에 `현재 단계 / 전체 4단계` 진행률 표시. 사용자가 "얼마나 남았는지" 알면 이탈률이 낮아진다.
+- `@supabase/ssr`의 `createBrowserClient` + 미들웨어 패턴으로 세션을 쿠키에 유지
+- 재방문 시 로그인 없이 온보딩 페이지 진입 가능
+
+### Claude API 활용
+
+| 기능 | 모델 | 방식 |
+|------|------|------|
+| 콘텐츠 아이디어 생성 (3·4번) | GPT-4o-mini (PoC) | SSE 스트리밍 |
+| 자유 대화 (5번) | GPT-4o-mini (PoC) | SSE 스트리밍 |
+
+> 프로덕션에서는 Claude Haiku로 교체 예정. API 응답 형식(SSE)은 동일하므로 모델명만 변경하면 된다.
+
+### DB 구조 (Supabase)
+
+```sql
+profiles             -- 사용자 프로필, survey_choice, onboarding_completed_at
+connected_accounts   -- 연동된 SNS 플랫폼 (platform, is_active, token_expires_at)
+onboarding_events    -- 플로우 내 이벤트 로그 (event_name, properties JSONB)
+```
+
+RLS(Row Level Security) 적용 — 본인 데이터만 읽기/쓰기 가능.
 
 ---
 
@@ -121,25 +150,27 @@ sns-select → connecting →(1.8초 후)→ connected → expand → done
 
 | 가설 | 검증 방법 |
 |------|-----------|
-| 설문 이후 SNS 선택까지 이탈 없이 도달 | PostHog `onboarding_survey_completed` → `sns_platform_selected` 퍼널 |
-| 4번 경로가 SNS 연동으로 수렴하는 비율 | `ideas_result_cta_clicked` 이벤트 |
-| 5번 경로 AI 응답 후 연동 전환율 | `chat_replied` → `sns_connect_clicked` 비율 |
-| 첫 발행 후 다른 플랫폼 확장 클릭율 | `expand_platform_clicked` |
+| 설문 후 목적별로 다른 화면으로 분기되는가 | 4가지 선택지를 각각 클릭해서 플로우 확인 |
+| 이미 연동한 사용자는 SNS 선택을 건너뛰는가 | `connected_accounts`에 레코드가 있는 상태에서 재진입 |
+| 콘텐츠 아이디어가 실제로 생성되는가 | [3·4번] 주제 입력 후 Claude 스트리밍 응답 확인 |
+| 페르소나 저장이 완료되는가 | [1번] 브랜드명 입력 후 저장 버튼 클릭 확인 |
+| 세션이 재방문 시에도 유지되는가 | 로그인 후 브라우저 닫고 재접속 |
 
-실제 Mirra 코드베이스에 이식할 때 각 `setStep()` 호출 직전에 PostHog `posthog.capture()` 1줄 추가로 모든 이벤트 계측 완료.
+Vercel 배포 주소: **https://poc-three-blush.vercel.app/**
 
 ---
 
 ## 프로덕션 이식 경로
 
-| 항목 | PoC | 프로덕션 |
-|------|-----|----------|
-| 상태 관리 | React `useState` | URL searchParams (뒤로가기 지원) 또는 서버 세션 |
-| 연동 시뮬레이션 | `setTimeout(1.8초)` | 실제 OAuth flow (`/api/auth/[platform]`) |
-| AI 대화(5번) | 고정 응답 | Claude Haiku API 스트리밍 응답 |
-| 아이디어 생성 | Mock 5개 | Claude Haiku → 주제 기반 실제 아이디어 |
-| 이벤트 계측 | 미구현 | PostHog `posthog.capture()` (Day 4 계획) |
-| 온보딩 완료 플래그 | 미구현 | DB `users.onboarding_completed_at` 갱신 |
+| 항목 | PoC 현재 상태 | 프로덕션 |
+|------|-------------|----------|
+| 인증 | Supabase Google OAuth (작동 중) | 기존 Mirra 인증 시스템으로 교체 |
+| 연동 시뮬레이션 | `setTimeout(1.8초)` mock | 실제 OAuth flow (`/api/auth/[platform]`) |
+| 성과 분석 | Mock 데이터 | 실제 SNS API 데이터 |
+| LLM | GPT-4o-mini | Claude Haiku (API 형식 동일, 모델명 교체) |
+| 이벤트 계측 | `onboarding_events` 테이블 기록 | PostHog 병행 연결 (B.md Day 4) |
+| 온보딩 완료 플래그 | `profiles.onboarding_completed_at` 기록 (작동 중) | 동일 |
+| SNS 중복 연동 방지 | `connected_accounts` 조회 후 스킵 (작동 중) | 동일 |
 
 ---
 
@@ -147,23 +178,21 @@ sns-select → connecting →(1.8초 후)→ connected → expand → done
 
 ### 사용한 AI 도구 및 워크플로우
 
-| 단계 | 플러그인 | 역할 |
-|------|----------|------|
-| 1 | **Office Hour** | 온보딩 설문 방향 정의. "연동률이 낮은 이유가 가입 후 경로 불명확이라면, 설문으로 목적을 물어보고 연동까지 직접 안내하면 어떨까"를 대화로 빠르게 검증 |
-| 2 | **브레인스토밍 스킬** | 5개 선택지 문구 발산. 초안 10개 중 중복 의도를 합치고 최종 5개로 정리 |
-| 3 | **writing-plans 스킬** | B.md Day 2 코호트 분석 결과가 시나리오 A일 때 어떤 PoC가 가장 설득력 있는지 설계 |
-| 4 | **Git Worktrees** | 문서(B.md, C.md) 작업과 poc/ 코드 작업을 별도 컨텍스트로 격리 |
-| 5 | **Sub-Agent Dev** | page.tsx 전체 컴포넌트 구현. 각 화면 컴포넌트를 독립 에이전트로 병렬 작성 후 통합 |
+| 단계 | 도구 | 역할 |
+|------|------|------|
+| 1 | **Claude Code (대화)** | 온보딩 설문 방향 정의. 선택지별 다른 플로우를 만드는 것이 맞는지 논거 검토 |
+| 2 | **Claude Code (구현)** | 상태 머신 구조, Supabase 인증 연결, API route 초안 생성 |
+| 3 | **Claude Code (QA)** | 배포 후 버튼별 플로우 동작 확인, 콘솔 에러 점검 |
 
 ### AI를 사용한 부분
 
-- **선택지 문구 초안**: 브레인스토밍 스킬로 10개 후보를 빠르게 발산했다. 최종 5개 문구와 sub-text는 "마찰을 줄이고 가치를 먼저 보여주는" 방향으로 내가 직접 편집했다.
-- **컴포넌트 보일러플레이트**: 각 화면 컴포넌트의 JSX 구조는 Sub-Agent Dev가 초안을 생성했다. Tailwind 클래스 조합, 호버 상태 처리, 그리드 레이아웃 등 반복적인 부분.
-- **플로우 엣지케이스 검토**: "4번 경로가 sns-select로 수렴할 때 `choice` 상태가 올바르게 전달되는가"를 Claude와 함께 타입 검토했다.
+- **Supabase SSR 미들웨어 패턴**: `@supabase/ssr` 공식 권장 패턴으로 세션 갱신 로직 작성. 처음에 `response` 변수명이 남아 런타임 에러가 발생했고, Claude가 `supabaseResponse`로 일관되게 수정하는 것을 제안해 적용했다.
+- **컴포넌트 보일러플레이트**: 각 Step 화면의 JSX 구조와 Tailwind 클래스는 Claude가 초안을 생성했다.
+- **Claude API 스트리밍**: SSE 파싱 로직(`data: {...}` 라인 처리)을 Claude와 함께 작성했다.
 
 ### AI를 믿지 않고 직접 결정한 부분
 
-- **4번 경로를 연동 우선으로 하지 않은 결정**: AI는 처음에 "모든 경로를 SNS 선택으로 통일"을 제안했다. 아이디어가 없는 사용자는 연동 후 할 것이 없다는 것을 직접 사용자 입장에서 생각해서 기획 → 생성 → 연동 순서로 바꿨다.
-- **5번 경로 AI 응답을 고정값으로 한 결정**: PoC에서 실제 LLM 호출은 API key 의존성과 응답 지연을 만든다. 의도를 보여주는 데는 고정 응답으로 충분하고, 실제 구현 경로(Claude Haiku 스트리밍)는 별도로 문서화했다.
-- **확장 넛지 타이밍**: AI는 연동 완료 직후(connected 화면)에 다른 플랫폼 확장 넛지를 넣는 것을 제안했다. 첫 발행이 끝난 직후(expand 화면)로 옮겼다. 발행 전에 "다른 곳에도"를 묻는 것은 순서상 부자연스럽다.
-- **Progress Bar를 4단계로 고정**: AI는 경로별로 다른 총 단계를 표시하려 했다. 단순하게 4단계로 통일했다. 경로마다 숫자가 달라지면 사용자가 혼란스럽다.
+- **선택지별 경로를 다르게 만든 결정**: Claude는 처음에 모든 경로를 "SNS 선택 → 첫 발행"으로 통일하는 것을 제안했다. [3번] 사용자가 아이디어를 먼저 받고 나서 어디에 올릴지 결정하는 순서가 더 자연스럽다는 판단으로 직접 분기했다.
+- **[1번] 페르소나 설정을 SNS 연동 이후로 배치한 결정**: "어떤 계정의 브랜드인가"가 결정된 후에 페르소나를 입력받아야 의미가 있다. 연동 전 페르소나 입력은 맥락이 없다.
+- **SNS 중복 연동 방지를 DB 기반으로 구현한 결정**: localStorage나 쿠키로 처리하는 방법도 있지만, `connected_accounts` 테이블이 이미 있으므로 DB를 단일 진실 소스(single source of truth)로 쓰는 것이 맞다.
+- **mock 데이터와 실제 구현 사이의 범위 결정**: [2번] 성과 분석은 실제 SNS API 없이 mock으로 처리했다. PoC에서 증명하려는 것은 "연동 후 이런 인사이트를 보여줄 수 있다"는 UX 흐름이지, 실제 데이터 파이프라인이 아니다. 범위를 의도적으로 잘랐다.
