@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
       "X-Title": "Mirra Content Ideas",
     },
     body: JSON.stringify({
-      model: "google/gemini-flash-1.5",
+      model: "google/gemini-2.5-flash",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
