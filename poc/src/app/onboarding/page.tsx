@@ -158,12 +158,14 @@ function SurveyScreen({ onSelect }: { onSelect: (c: SurveyChoice) => void }) {
 }
 
 function SnsSelectScreen({ choice, onSelect, onBack }: { choice: SurveyChoice; onSelect: (p: Platform) => void; onBack: () => void }) {
-  const label = choice === 1 ? "자동화할" : choice === 2 ? "성과를 높일" : "글을 발행할";
+  const label = choice === 1 ? "자동화할" : choice === 2 ? "성과를 높일" : "발행할";
   return (
     <div>
       <Progress current={2} total={4} />
       <BackButton onClick={onBack} />
-      <h1 className="text-2xl font-bold text-gray-900 mb-1">{label} SNS를 선택해주세요</h1>
+      <h1 className="text-2xl font-bold text-gray-900 mb-1">
+        {choice === 3 ? "어디에서 발행할까요?" : `${label} SNS를 선택해주세요`}
+      </h1>
       <p className="text-sm text-gray-500 mb-6">계정을 연동하면 발행·성과 분석·자동화가 활성화됩니다</p>
       <div className="grid grid-cols-2 gap-3">
         {PLATFORMS.map(p => (
@@ -410,7 +412,7 @@ function ContentSourceScreen({
   onDone,
   onBack,
 }: {
-  platform: Platform;
+  platform?: Platform;
   contentType: ContentType;
   onDone: () => void;
   onBack: () => void;
@@ -434,13 +436,13 @@ function ContentSourceScreen({
     setRaw("");
     setIdeas([]);
     setDone(false);
-    await trackEvent("ideas_generated", { source, topic, platform });
+    await trackEvent("ideas_generated", { source, topic, platform: platform ?? "none" });
 
     try {
       const res = await fetch("/api/ideas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source, topic, platform, contentType }),
+        body: JSON.stringify({ source, topic, platform: platform ?? "instagram", contentType }),
       });
       if (!res.ok || !res.body) throw new Error();
 
@@ -485,7 +487,7 @@ function ContentSourceScreen({
           {CONTENT_TYPE_META[contentType].icon}
           {CONTENT_TYPE_META[contentType].label}
         </span>
-        <span className="text-xs text-gray-400">{PLATFORM_LABEL[platform]}</span>
+        {platform && <span className="text-xs text-gray-400">{PLATFORM_LABEL[platform]}</span>}
       </div>
 
       <p className="text-xs font-semibold text-gray-500 mb-2">어디서 소재를 찾아볼까요?</p>
@@ -934,7 +936,8 @@ export default function OnboardingPage() {
     setChoice(c);
     await saveSurveyChoice(c);
     await trackEvent("survey_completed", { choice: c });
-    if (c === 4) setStep("ideas");
+    if (c === 3) { setContentType("card"); setStep("content-source"); }
+    else if (c === 4) setStep("ideas");
     else if (c === 5) setStep("chat");
     else setStep("sns-select");
   }, []);
@@ -1031,16 +1034,24 @@ export default function OnboardingPage() {
           />
         )}
 
-        {step === "content-source" && platform && contentType && (
+        {step === "content-source" && contentType && (choice === 3 || platform) && (
           <ContentSourceScreen
-            platform={platform}
+            platform={platform ?? undefined}
             contentType={contentType}
             onDone={async () => {
-              await trackEvent("expand_nudge_shown", { from_platform: platform });
-              setStep("expand");
+              if (choice === 3) {
+                setStep("sns-select");
+              } else {
+                await trackEvent("expand_nudge_shown", { from_platform: platform! });
+                setStep("expand");
+              }
             }}
             onBack={() => {
-              const types = PLATFORM_CONTENT_TYPES[platform];
+              if (choice === 3) {
+                setStep("survey");
+                return;
+              }
+              const types = PLATFORM_CONTENT_TYPES[platform!];
               setStep(types.length > 1 ? "content-type" : "connected");
             }}
           />
