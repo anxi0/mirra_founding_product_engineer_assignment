@@ -926,21 +926,50 @@ function DoneScreen() {
 
 // ── 메인 ─────────────────────────────────────────────────────────────────────
 
+async function fetchConnectedPlatform(): Promise<Platform | null> {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data } = await (supabase as any)
+    .from("connected_accounts")
+    .select("platform")
+    .eq("user_id", user.id)
+    .eq("is_active", true)
+    .limit(1)
+    .single();
+  return data?.platform ?? null;
+}
+
 export default function OnboardingPage() {
   const [step, setStep] = useState<Step>("survey");
   const [choice, setChoice] = useState<SurveyChoice | null>(null);
   const [platform, setPlatform] = useState<Platform | null>(null);
   const [contentType, setContentType] = useState<ContentType | null>(null);
+  const [connectedPlatform, setConnectedPlatform] = useState<Platform | null>(null);
+
+  React.useEffect(() => {
+    fetchConnectedPlatform().then(p => {
+      if (p) setConnectedPlatform(p);
+    });
+  }, []);
 
   const handleSurvey = useCallback(async (c: SurveyChoice) => {
     setChoice(c);
     await saveSurveyChoice(c);
     await trackEvent("survey_completed", { choice: c });
-    if (c === 3) { setContentType("card"); setStep("content-source"); }
-    else if (c === 4) setStep("ideas");
-    else if (c === 5) setStep("chat");
-    else setStep("sns-select");
-  }, []);
+    if (c === 3) { setContentType("card"); setStep("content-source"); return; }
+    if (c === 4) { setStep("ideas"); return; }
+    if (c === 5) { setStep("chat"); return; }
+    // 이미 연동된 계정이 있으면 SNS 선택·연동 스텝 건너뜀
+    if (connectedPlatform) {
+      setPlatform(connectedPlatform);
+      if (c === 1) setStep("persona");
+      else if (c === 2) setStep("analytics");
+      else setStep("content-type");
+      return;
+    }
+    setStep("sns-select");
+  }, [connectedPlatform]);
 
   const handlePlatformSelect = useCallback(async (p: Platform) => {
     setPlatform(p);
